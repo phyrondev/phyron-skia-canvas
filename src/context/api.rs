@@ -29,9 +29,9 @@ use skia_safe::FourByteTag;
 //
 
 pub fn new(mut cx: FunctionContext) -> JsResult<BoxedContext2D> {
-    let this = RefCell::new(Context2D::new());
     let parent = cx.argument::<BoxedCanvas>(1)?;
     let parent = parent.borrow();
+    let this = RefCell::new(Context2D::new(parent.color_space.clone()));
 
     this.borrow_mut().reset_size((parent.width, parent.height));
     Ok(cx.boxed(this))
@@ -559,11 +559,11 @@ pub fn get_fillStyle(mut cx: FunctionContext) -> JsResult<JsValue> {
 
 pub fn set_fillStyle(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let this = cx.argument::<BoxedContext2D>(0)?;
-    let mut this = this.borrow_mut();
     let arg = cx.argument::<JsValue>(1)?;
+    let cs = this.borrow().canvas_color_space.clone();
 
-    if let Some(dye) = Dye::new(&mut cx, arg) {
-        this.state.fill_style = dye;
+    if let Some(dye) = Dye::new(&mut cx, arg, &cs) {
+        this.borrow_mut().state.fill_style = dye;
     }
     Ok(cx.undefined())
 }
@@ -577,11 +577,11 @@ pub fn get_strokeStyle(mut cx: FunctionContext) -> JsResult<JsValue> {
 
 pub fn set_strokeStyle(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let this = cx.argument::<BoxedContext2D>(0)?;
-    let mut this = this.borrow_mut();
     let arg = cx.argument::<JsValue>(1)?;
+    let cs = this.borrow().canvas_color_space.clone();
 
-    if let Some(dye) = Dye::new(&mut cx, arg) {
-        this.state.stroke_style = dye;
+    if let Some(dye) = Dye::new(&mut cx, arg, &cs) {
+        this.borrow_mut().state.stroke_style = dye;
     }
     Ok(cx.undefined())
 }

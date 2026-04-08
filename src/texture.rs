@@ -1,8 +1,8 @@
 #![allow(non_snake_case)]
 use neon::prelude::*;
 use skia_safe::{
-    Color, Color4f, Matrix, Paint, PaintCap, PaintStyle, Path, Point, line_2d_path_effect,
-    path_2d_path_effect,
+    Color, Color4f, ColorSpace, Matrix, Paint, PaintCap, PaintStyle, Path, Point,
+    line_2d_path_effect, path_2d_path_effect,
 };
 use std::{cell::RefCell, f32::consts::PI, rc::Rc};
 
@@ -73,7 +73,7 @@ impl CanvasTexture {
 
         let mut color: Color4f = tile.color.into();
         color.a *= alpha;
-        paint.set_color(color.to_color());
+        paint.set_color4f(color, &ColorSpace::new_srgb());
     }
 
     pub fn use_clip(&self) -> bool {
@@ -85,11 +85,12 @@ impl CanvasTexture {
         tile.scale.into()
     }
 
-    pub fn to_color(&self, alpha: f32) -> Color {
+    pub fn to_color4f(&self, alpha: f32) -> (Color4f, Option<ColorSpace>) {
         let tile = self.texture.borrow();
         let mut color: Color4f = tile.color.into();
         color.a *= alpha;
-        color.to_color()
+        // Texture colors come from CSS parsing — they're sRGB.
+        (color, Some(ColorSpace::new_srgb()))
     }
 }
 

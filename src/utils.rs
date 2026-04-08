@@ -657,6 +657,11 @@ pub fn color_to_css<'a>(cx: &mut FunctionContext<'a>, color: &Color) -> JsResult
     Ok(cx.string(css).upcast())
 }
 
+/// Serialize a Color4f back to a CSS color string (sRGB).
+pub fn color4f_to_css<'a>(cx: &mut FunctionContext<'a>, color: &Color4f) -> JsResult<'a, JsValue> {
+    color_to_css(cx, &color.to_color())
+}
+
 //
 // Matrices
 //

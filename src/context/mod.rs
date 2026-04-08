@@ -40,6 +40,9 @@ impl Finalize for Context2D {}
 
 pub struct Context2D {
     pub bounds: Rect,
+    /// The canvas's working color space. Used to tag untagged colors (float
+    /// arrays) so Skia can convert them during export to a different space.
+    pub canvas_color_space: ColorSpace,
     recorder: RefCell<PageRecorder>,
     state: State,
     stack: Vec<State>,
@@ -94,7 +97,7 @@ impl Default for State {
         let mut paint = Paint::default();
         paint
             .set_stroke_miter(10.0)
-            .set_color(BLACK)
+            .set_color4f(Color4f::from(BLACK), &ColorSpace::new_srgb())
             .set_anti_alias(true)
             .set_stroke_width(1.0)
             .set_style(PaintStyle::Fill);
@@ -108,8 +111,8 @@ impl Default for State {
             matrix: Matrix::new_identity(),
 
             paint,
-            stroke_style: Dye::Color(BLACK),
-            fill_style: Dye::Color(BLACK),
+            stroke_style: Dye::Color(Color4f::from(BLACK), Some(ColorSpace::new_srgb())),
+            fill_style: Dye::Color(Color4f::from(BLACK), Some(ColorSpace::new_srgb())),
             stroke_width: 1.0,
             line_dash_offset: 0.0,
             line_dash_list: vec![],
@@ -215,11 +218,12 @@ impl State {
 }
 
 impl Context2D {
-    pub fn new() -> Self {
+    pub fn new(canvas_color_space: ColorSpace) -> Self {
         let bounds = Rect::from_wh(300.0, 150.0);
 
         Context2D {
             bounds,
+            canvas_color_space,
             recorder: RefCell::new(PageRecorder::new(bounds)),
             path: PathBuilder::new(),
             stack: vec![],
@@ -824,14 +828,20 @@ impl Context2D {
 
 #[derive(Clone)]
 pub enum Dye {
-    Color(Color),
+    /// A solid color with its source color space.
+    /// CSS colors carry `Some(sRGB)`, float arrays carry `None` (destination).
+    Color(Color4f, Option<ColorSpace>),
     Gradient(CanvasGradient),
     Pattern(CanvasPattern),
     Texture(CanvasTexture),
 }
 
 impl Dye {
-    pub fn new<'a>(cx: &mut FunctionContext<'a>, value: Handle<'a, JsValue>) -> Option<Self> {
+    pub fn new<'a>(
+        cx: &mut FunctionContext<'a>,
+        value: Handle<'a, JsValue>,
+        canvas_color_space: &ColorSpace,
+    ) -> Option<Self> {
         if let Ok(gradient) = value.downcast::<BoxedCanvasGradient, _>(cx) {
             Some(Dye::Gradient(gradient.borrow().clone()))
         } else if let Ok(pattern) = value.downcast::<BoxedCanvasPattern, _>(cx) {
@@ -839,13 +849,22 @@ impl Dye {
         } else if let Ok(texture) = value.downcast::<BoxedCanvasTexture, _>(cx) {
             Some(Dye::Texture(texture.borrow().clone()))
         } else {
-            color_in(cx, value).map(Dye::Color)
+            color4f_in(cx, value).map(|(c, cs)| {
+                // CSS colors are tagged as sRGB by color4f_in.
+                // Float arrays return None — tag them with the canvas's
+                // working color space so Skia can convert during export.
+                let cs = cs.unwrap_or_else(|| canvas_color_space.clone());
+                Dye::Color(c, Some(cs))
+            })
         }
     }
 
     pub fn value<'a>(&self, cx: &mut FunctionContext<'a>) -> JsResult<'a, JsValue> {
         match self {
-            Dye::Color(color) => color_to_css(cx, color),
+            Dye::Color(color, _) => {
+                // Convert back to sRGB for CSS serialization.
+                color4f_to_css(cx, color)
+            }
             _ => Ok(cx.null().upcast()), /* flag to the js context that it
                                           * should use its cached
                                           * pattern/gradient ref */
@@ -854,7 +873,7 @@ impl Dye {
 
     pub fn is_opaque(&self) -> bool {
         match self {
-            Dye::Color(color) => Color4f::from(*color).is_opaque(),
+            Dye::Color(color, _) => color.is_opaque(),
             Dye::Gradient(gradient) => gradient.is_opaque(),
             Dye::Pattern(pattern) => pattern.is_opaque(),
             Dye::Texture(_) => false,
@@ -863,10 +882,10 @@ impl Dye {
 
     pub fn mix_into(&self, paint: &mut Paint, alpha: f32, sampling_filter: SamplingFilter) {
         match self {
-            Dye::Color(color) => {
-                let mut color = Color4f::from(*color);
+            Dye::Color(color, cs) => {
+                let mut color = *color;
                 color.a *= alpha;
-                paint.set_color(color.to_color());
+                paint.set_color4f(color, cs.as_ref());
             }
             Dye::Gradient(gradient) => {
                 paint.set_shader(gradient.shader()).set_alpha_f(alpha);
@@ -877,7 +896,8 @@ impl Dye {
                     .set_alpha_f(alpha);
             }
             Dye::Texture(texture) => {
-                paint.set_color(texture.to_color(alpha));
+                let (color, cs) = texture.to_color4f(alpha);
+                paint.set_color4f(color, cs.as_ref());
             }
         };
     }

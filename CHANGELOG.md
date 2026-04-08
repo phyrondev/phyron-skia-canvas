@@ -2,6 +2,25 @@
 
 <!--## 🥚 ⟩ [Unreleased]-->
 
+## 📦 ⟩ [v3.4.5] ⟩ Apr 8, 2026
+
+### New Features
+
+- **Color-space-aware solid colors**: `fillStyle`, `strokeStyle`, and texture colors now use
+  Skia's `setColor4f` with explicit color space tagging. CSS colors (hex, `rgb()`, named) are
+  tagged as sRGB; float array colors (`[r, g, b, a]`) are tagged with the canvas's working
+  color space. Skia automatically converts colors during picture replay when the export surface
+  has a different color space (e.g. linear → sRGB gamma correction).
+
+- **`colorSpace` export option**: `toBuffer()` and `toFile()` now accept a `colorSpace` option
+  (e.g. `"srgb"`, `"srgb-linear"`, `"display-p3"`) that sets the output surface's color space.
+  Combined with color-space-aware colors, this enables correct gamma-corrected output from
+  linear working spaces without manual pixel conversion.
+
+### Bugfixes
+
+- Fixed `colorSpace` option not being forwarded from JS `exportOptions()` to the native side.
+
 ## 📦 ⟩ [v3.3.0] ⟩ Jan 29, 2026
 
 ### New Features
