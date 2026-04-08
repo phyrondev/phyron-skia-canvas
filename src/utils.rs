@@ -612,10 +612,18 @@ pub fn color4f_in<'a>(
 ) -> Option<(Color4f, Option<ColorSpace>)> {
     if val.is_a::<JsArray, _>(cx) {
         let arr = val.downcast::<JsArray, _>(cx).ok()?;
-        let r = arr.get::<JsNumber, _, _>(cx, 0).ok()?.value(cx) as f32;
-        let g = arr.get::<JsNumber, _, _>(cx, 1).ok()?.value(cx) as f32;
-        let b = arr.get::<JsNumber, _, _>(cx, 2).ok()?.value(cx) as f32;
-        let a = arr.get::<JsNumber, _, _>(cx, 3).ok()?.value(cx) as f32;
+        if arr.len(cx) < 4 {
+            return None;
+        }
+        // Use get_value + downcast to avoid throwing on non-number elements.
+        let rv = arr.get_value(cx, 0).ok()?;
+        let gv = arr.get_value(cx, 1).ok()?;
+        let bv = arr.get_value(cx, 2).ok()?;
+        let av = arr.get_value(cx, 3).ok()?;
+        let r = rv.downcast::<JsNumber, _>(cx).ok()?.value(cx) as f32;
+        let g = gv.downcast::<JsNumber, _>(cx).ok()?.value(cx) as f32;
+        let b = bv.downcast::<JsNumber, _>(cx).ok()?.value(cx) as f32;
+        let a = av.downcast::<JsNumber, _>(cx).ok()?.value(cx) as f32;
         Some((Color4f::new(r, g, b, a), None))
     } else {
         let color = color_in(cx, val)?;
