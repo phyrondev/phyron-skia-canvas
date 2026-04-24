@@ -592,6 +592,62 @@ impl Page {
         fs::write(path, data).map_err(|why| format!("{}: \"{}\"", why, path.display()))
     }
 
+    /// Render this page into a raster surface configured from
+    /// `surface_options` and read the resulting pixels into the
+    /// caller-supplied `dst_info`.
+    ///
+    /// Splits the two color configurations `encoded_as("raw", ...)`
+    /// conflates: `surface_options` decides the compositing pixel
+    /// format + color space (e.g. linear F32 for HDR-capable
+    /// blending), while `dst_info` decides the wire format
+    /// Skia converts the snapshot into (e.g. 8-bit sRGB
+    /// premultiplied or unpremultiplied for a canvas paint path).
+    ///
+    /// Returns the packed pixel buffer sized to
+    /// `dst_info.compute_min_byte_size()`.
+    pub fn render_raw(
+        &self,
+        surface_options: ExportOptions,
+        dst_info: ImageInfo,
+        engine: RenderingEngine,
+    ) -> Result<Vec<u8>, String> {
+        if self.bounds.is_empty() {
+            return Err("Width and height must be non-zero to generate an image".to_string());
+        }
+        let ExportOptions {
+            density,
+            matte,
+            color_type,
+            ref color_space,
+            ..
+        } = surface_options;
+        let img_dims = self.scaled_dimensions(density);
+        let img_info = ImageInfo::new(img_dims, color_type, AlphaType::Premul, color_space.clone());
+        let img_scale = Matrix::scale((density, density)).into();
+
+        let mut surface = engine.make_surface(&img_info, &surface_options)?;
+        let canvas = surface.canvas();
+        if let Some(color) = matte {
+            canvas.clear(color);
+        }
+        canvas.set_matrix(&img_scale);
+        for pict in self.layers.iter() {
+            pict.playback(canvas);
+        }
+
+        let stride = dst_info.min_row_bytes();
+        let mut buffer: Vec<u8> = vec![0; dst_info.compute_min_byte_size()];
+        if surface.read_pixels(&dst_info, &mut buffer, stride, (0, 0)) {
+            Ok(buffer)
+        } else {
+            Err(format!(
+                "Could not read pixels into destination format ({:?} / {:?})",
+                dst_info.color_type(),
+                dst_info.alpha_type(),
+            ))
+        }
+    }
+
     fn append_to<'a>(
         &self,
         doc: Document<'a>,
