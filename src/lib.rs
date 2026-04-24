@@ -2,23 +2,28 @@
 #![allow(clippy::unnecessary_wraps)]
 use neon::prelude::*;
 
-mod canvas;
-mod color_filter;
-mod context;
-mod filter;
-mod font_library;
-mod gpu;
-mod gradient;
+// Modules are `pub` so Rust library consumers (see the
+// `crate-type = ["cdylib", "rlib"]` split) can reach the pure-Rust
+// wrapper types directly. The Neon addon entry point below still
+// uses them via unqualified paths, so visibility does not change
+// behavior for Node consumers.
+pub mod canvas;
+pub mod color_filter;
+pub mod context;
+pub mod filter;
+pub mod font_library;
+pub mod gpu;
+pub mod gradient;
 #[cfg(feature = "window")]
-mod gui;
-mod image;
-mod image_filter;
-mod paragraph;
-mod path;
-mod pattern;
-mod texture;
-mod typography;
-mod utils;
+pub mod gui;
+pub mod image;
+pub mod image_filter;
+pub mod paragraph;
+pub mod path;
+pub mod pattern;
+pub mod texture;
+pub mod typography;
+pub mod utils;
 
 use context::api as ctx;
 
