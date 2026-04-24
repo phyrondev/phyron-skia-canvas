@@ -30,6 +30,7 @@ fn backend(mut cx: FunctionContext) -> JsResult<JsString> {
     Ok(cx.string(status.to_string()))
 }
 
+#[cfg(feature = "node-addon")]
 #[neon::main]
 fn main(mut cx: ModuleContext) -> NeonResult<()> {
     // initialize thread pool w/ non-default size if requested

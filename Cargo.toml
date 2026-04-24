@@ -11,9 +11,23 @@ edition = "2024"
 exclude = ["index.node"]
 
 [lib]
-crate-type = ["cdylib"]
+# Build both a C dynamic library (for the Node/Neon addon that
+# `napi-rs`-style consumers dlopen) and a regular Rust rlib so
+# downstream Rust crates can depend on the pure-Rust types directly.
+# The Neon-specific `#[neon::main]` entry point is feature-gated
+# below so Rust-only consumers opt out of the Node addon registration.
+crate-type = ["cdylib", "rlib"]
 
 [features]
+# Default features keep the Node addon entry point registered so the
+# existing `npm run build` / Neon consumers see no behavior change.
+# Rust library consumers should depend with `default-features = false`.
+default = ["node-addon"]
+
+# Registers the Neon `#[neon::main]` entry point and the export
+# table that Node.js consults when dlopen'ing the resulting cdylib.
+node-addon = []
+
 freetype = ["skia-safe/embed-freetype", "skia-safe/freetype-woff2"]
 metal = [
     "skia-safe/metal",
