@@ -22,6 +22,31 @@ let canvas = new Canvas(1920, 1080, {
 });
 ```
 
+## Rust Library Consumers
+
+Rust consumers should use `phyron_skia_canvas::native`. That facade is the stable Rust API and intentionally hides Neon and `skia-safe` types. The older public modules exist for Node/Neon compatibility and are not the preferred API for new Rust consumers.
+
+```rust
+use phyron_skia_canvas::native::{
+    LinearColorSpace, NativeRecorder, PixelFormat, RawFrameOptions, Rect, RgbaLinear,
+    ShapePaint, SurfaceOptions,
+};
+
+let mut recorder = NativeRecorder::new(Rect::from_xywh(0.0, 0.0, 1920.0, 1080.0))?;
+recorder.record(|canvas| {
+    canvas.clear(RgbaLinear::opaque(0.0, 0.0, 0.0));
+    canvas.draw_rect(
+        Rect::from_xywh(100.0, 100.0, 200.0, 100.0),
+        &ShapePaint::fill(RgbaLinear::opaque(1.0, 0.0, 0.0)),
+    );
+});
+
+let frame = recorder.render_raw(
+    SurfaceOptions { color_space: LinearColorSpace::DisplayP3, ..Default::default() },
+    RawFrameOptions { pixel_format: PixelFormat::Rgba8UnormUnpremul, ..Default::default() },
+)?;
+```
+
 ---
 
 <a href="https://skia-canvas.org">

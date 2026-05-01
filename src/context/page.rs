@@ -688,6 +688,10 @@ impl PageSequence {
         self.pages.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.pages.is_empty()
+    }
+
     pub fn materialize(&mut self, engine: &RenderingEngine, options: &ExportOptions) {
         if !options.is_raster() {
             return;

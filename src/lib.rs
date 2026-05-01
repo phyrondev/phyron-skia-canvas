@@ -25,6 +25,11 @@ pub mod texture;
 pub mod typography;
 pub mod utils;
 
+// AIDEV-NOTE: `native` is the Rust consumer API. Keep Neon and raw
+// `skia_safe` types out of its public signatures so downstream Rust
+// crates do not inherit the binding internals.
+pub mod native;
+
 use context::api as ctx;
 
 /// Module-level function to get backend status without creating a canvas.
