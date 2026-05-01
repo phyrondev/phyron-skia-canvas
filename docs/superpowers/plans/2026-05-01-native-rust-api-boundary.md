@@ -1,6 +1,6 @@
 # Native Rust API Boundary Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use `superpowers:subagent-driven-development` (if subagents available) or `superpowers:executing-plans` to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED: Use `superpowers:subagent-driven-development` (if subagents available) or `superpowers:executing-plans` to implement this plan. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Expose a stable Rust-only API from `phyron-skia-canvas` so `studio-render-native` can stop depending on `skia-safe` directly.
 
@@ -18,6 +18,22 @@ API changes are approved by Moritz on 2026-05-01 for this specific scope:
 - Add public Rust-only types/methods needed by Studio.
 - Keep existing JS/Neon API behavior compatible.
 - Do not remove or rename existing public modules in this pass unless Moritz explicitly approves a second breaking cleanup.
+
+### Implementation status (2026-05-01)
+
+- Chunks 1-5 and 7 (Tasks 1-8, 11-12): **complete** in this repo on branch `plan/native-rust-api-boundary`.
+- Chunk 6 (Tasks 9-10, Studio consumer proof): **not started** -- happens in `studio/desktop-app` after this PR lands.
+
+Verification on the implementation branch:
+
+- `just fmt-check` passes.
+- `just check` passes.
+- `just lint-check` passes (zero warnings).
+- `just build` produces `lib/skia.node`.
+- `just test` -- 146 pass / 1 skip / 0 fail (Node JS suite).
+- `cargo test --features "vulkan,window,freetype" --test native_api_contract` -- 5/5 pass.
+- Audit `rg -n "pub .*skia_safe|pub .*FunctionContext|pub .*JsBox|pub .*Handle<|pub .*RefCell" src/native` -- no output.
+- Audit `rg -n "\.unwrap\(|\.expect\(|panic!|todo!|unimplemented!" src/native tests/native_api_contract.rs` -- no output.
 
 This plan branch includes the blueprint integration locally. Before implementing, make sure `.blueprints` is populated:
 
@@ -234,7 +250,7 @@ Implement `Display` and `std::error::Error` for `NativeError`.
 
 - Create: `tests/native_api_contract.rs`
 
-- [ ] **Step 1: Write the failing compile/runtime contract.**
+- [x] **Step 1: Write the failing compile/runtime contract.**
 
 ```rust
 use phyron_skia_canvas::native::{
@@ -278,7 +294,7 @@ fn native_facade_renders_tight_rgba8_without_importing_skia_safe() {
 
 The test intentionally does not import `skia_safe`.
 
-- [ ] **Step 2: Run the test and verify it fails.**
+- [x] **Step 2: Run the test and verify it fails.**
 
 ```bash
 cargo test --no-default-features native_facade_renders_tight_rgba8_without_importing_skia_safe
@@ -299,7 +315,7 @@ Expected: FAIL to compile because `phyron_skia_canvas::native` does not exist.
 - Create: `src/native/recorder.rs`
 - Modify: `src/lib.rs`
 
-- [ ] **Step 1: Add public module export.**
+- [x] **Step 1: Add public module export.**
 
 In `src/lib.rs`, add:
 
@@ -311,7 +327,7 @@ pub mod native;
 
 Keep existing module exports unchanged.
 
-- [ ] **Step 2: Add public type shells.**
+- [x] **Step 2: Add public type shells.**
 
 Implement the types from "Public Types" with methods:
 
@@ -332,7 +348,7 @@ impl RgbaLinear {
 
 No `get_` prefixes.
 
-- [ ] **Step 3: Add minimal `NativeRecorder` stubs.**
+- [x] **Step 3: Add minimal `NativeRecorder` stubs.**
 
 ```rust
 pub struct NativeRecorder {
@@ -346,7 +362,7 @@ pub struct NativeCanvas<'a> {
 
 The stubs can return `NativeError::Render { reason: "not implemented".into() }` until Chunk 2.
 
-- [ ] **Step 4: Run the test and verify the failure moved.**
+- [x] **Step 4: Run the test and verify the failure moved.**
 
 ```bash
 cargo test --no-default-features native_facade_renders_tight_rgba8_without_importing_skia_safe
@@ -354,7 +370,7 @@ cargo test --no-default-features native_facade_renders_tight_rgba8_without_impor
 
 Expected: compile succeeds, runtime fails with the temporary "not implemented" error.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```bash
 git add src/lib.rs src/native tests/native_api_contract.rs
@@ -371,7 +387,7 @@ git commit -m "Add native Rust facade skeleton."
 - Modify: `src/native/pixels.rs`
 - Test: `tests/native_api_contract.rs`
 
-- [ ] **Step 1: Add color-space tests.**
+- [x] **Step 1: Add color-space tests.**
 
 Add:
 
@@ -401,7 +417,7 @@ fn native_facade_constructs_required_linear_working_spaces() {
 }
 ```
 
-- [ ] **Step 2: Implement private conversion helpers.**
+- [x] **Step 2: Implement private conversion helpers.**
 
 In `src/native/color.rs`, implement private methods:
 
@@ -424,7 +440,7 @@ Implementation requirements:
 - Do not silently fallback to sRGB in the new native API.
 - Existing `utils::to_color_space` may remain fallback-based for JS compatibility.
 
-- [ ] **Step 3: Implement pixel format conversions.**
+- [x] **Step 3: Implement pixel format conversions.**
 
 In `src/native/pixels.rs`, implement private helpers:
 
@@ -443,7 +459,7 @@ Map:
 - `Rgba16fPremul` -> `RGBAF16`, `Premul`, 8.
 - `Rgba32fPremul` -> `RGBAF32`, `Premul`, 16.
 
-- [ ] **Step 4: Run tests.**
+- [x] **Step 4: Run tests.**
 
 ```bash
 cargo test --no-default-features native_facade_constructs_required_linear_working_spaces
@@ -451,7 +467,7 @@ cargo test --no-default-features native_facade_constructs_required_linear_workin
 
 Expected: pass once Chunk 3 render path is implemented; if Chunk 3 is not implemented yet, this may still fail at render-time. Do not skip it.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```bash
 git add src/native/color.rs src/native/pixels.rs tests/native_api_contract.rs
@@ -468,7 +484,7 @@ git commit -m "Add strict native color and pixel contracts."
 - Modify: `src/context/page.rs` only if needed
 - Test: `tests/native_api_contract.rs`
 
-- [ ] **Step 1: Implement `NativeRecorder::new`.**
+- [x] **Step 1: Implement `NativeRecorder::new`.**
 
 Requirements:
 
@@ -476,7 +492,7 @@ Requirements:
 - Internally create `context::page::PageRecorder`.
 - Keep `skia_safe::Rect` private.
 
-- [ ] **Step 2: Implement `NativeRecorder::record`.**
+- [x] **Step 2: Implement `NativeRecorder::record`.**
 
 The public closure receives `&mut NativeCanvas`, never `&skia_safe::Canvas`.
 
@@ -493,11 +509,11 @@ pub fn record(&mut self, f: impl FnOnce(&mut NativeCanvas<'_>)) {
 
 `NativeCanvas::new` must be private.
 
-- [ ] **Step 3: Implement `NativeCanvas::clear`.**
+- [x] **Step 3: Implement `NativeCanvas::clear`.**
 
 Use `skia_safe::Color4f` internally. Preserve premultiplied alpha from `RgbaLinear`.
 
-- [ ] **Step 4: Implement `NativeRecorder::render_raw`.**
+- [x] **Step 4: Implement `NativeRecorder::render_raw`.**
 
 Requirements:
 
@@ -511,7 +527,7 @@ Requirements:
 
 If `Page::render_raw` cannot be used without exposing `skia_safe::ImageInfo` publicly, keep that type inside `native::recorder` and pass it internally.
 
-- [ ] **Step 5: Run the first contract test.**
+- [x] **Step 5: Run the first contract test.**
 
 ```bash
 cargo test --no-default-features native_facade_renders_tight_rgba8_without_importing_skia_safe
@@ -519,7 +535,7 @@ cargo test --no-default-features native_facade_renders_tight_rgba8_without_impor
 
 Expected: pass.
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ```bash
 git add src/native/recorder.rs src/native/pixels.rs src/native/color.rs src/context/page.rs tests/native_api_contract.rs
@@ -536,13 +552,13 @@ git commit -m "Render raw frames through native Rust facade."
 - Modify: `src/native/recorder.rs`
 - Test: `tests/native_api_contract.rs`
 
-- [ ] **Step 1: Add shape paint tests.**
+- [x] **Step 1: Add shape paint tests.**
 
 Add a test that draws a fill-only rectangle, a stroked rounded rect, and an oval, then asserts non-background pixels exist in expected rough regions.
 
 Do not create/update visual baselines.
 
-- [ ] **Step 2: Implement `ShapePaint`.**
+- [x] **Step 2: Implement `ShapePaint`.**
 
 ```rust
 #[derive(Debug, Clone, PartialEq)]
@@ -564,7 +580,7 @@ impl ShapePaint {
 }
 ```
 
-- [ ] **Step 3: Implement canvas methods.**
+- [x] **Step 3: Implement canvas methods.**
 
 ```rust
 impl NativeCanvas<'_> {
@@ -580,7 +596,7 @@ impl NativeCanvas<'_> {
 
 Do not expose `skia_safe::Paint`, `skia_safe::Rect`, or `skia_safe::Point`.
 
-- [ ] **Step 4: Run shape tests.**
+- [x] **Step 4: Run shape tests.**
 
 ```bash
 cargo test --no-default-features native_facade_draws_shapes
@@ -588,7 +604,7 @@ cargo test --no-default-features native_facade_draws_shapes
 
 Expected: pass.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```bash
 git add src/native/paint.rs src/native/recorder.rs tests/native_api_contract.rs
@@ -603,7 +619,7 @@ git commit -m "Add shape drawing to native Rust facade."
 - Modify: `src/native/recorder.rs`
 - Test: `tests/native_api_contract.rs`
 
-- [ ] **Step 1: Add encoded image test.**
+- [x] **Step 1: Add encoded image test.**
 
 Use one existing small image from `tests/assets`, for example `tests/assets/pentagon.png`.
 
@@ -629,7 +645,7 @@ fn native_facade_decodes_and_draws_encoded_image() {
 }
 ```
 
-- [ ] **Step 2: Implement `NativeImage`.**
+- [x] **Step 2: Implement `NativeImage`.**
 
 `NativeImage` wraps `skia_safe::Image` privately.
 
@@ -643,7 +659,7 @@ impl NativeImage {
 }
 ```
 
-- [ ] **Step 3: Implement `draw_image_rect`.**
+- [x] **Step 3: Implement `draw_image_rect`.**
 
 ```rust
 impl NativeCanvas<'_> {
@@ -653,7 +669,7 @@ impl NativeCanvas<'_> {
 
 Opacity must modulate alpha only. Preserve Studio's premultiplied alpha assumptions.
 
-- [ ] **Step 4: Run image test.**
+- [x] **Step 4: Run image test.**
 
 ```bash
 cargo test --no-default-features native_facade_decodes_and_draws_encoded_image
@@ -661,7 +677,7 @@ cargo test --no-default-features native_facade_decodes_and_draws_encoded_image
 
 Expected: pass.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```bash
 git add src/native/image.rs src/native/recorder.rs tests/native_api_contract.rs
@@ -676,7 +692,7 @@ git commit -m "Add encoded image drawing to native Rust facade."
 - Modify: `src/native/recorder.rs`
 - Test: `tests/native_api_contract.rs`
 
-- [ ] **Step 1: Add text test.**
+- [x] **Step 1: Add text test.**
 
 ```rust
 #[test]
@@ -702,7 +718,7 @@ fn native_facade_draws_visible_text_pixels() {
 }
 ```
 
-- [ ] **Step 2: Implement text options.**
+- [x] **Step 2: Implement text options.**
 
 ```rust
 #[derive(Debug, Clone, PartialEq)]
@@ -735,13 +751,13 @@ pub enum VerticalAlign {
 }
 ```
 
-- [ ] **Step 3: Implement `draw_text_box`.**
+- [x] **Step 3: Implement `draw_text_box`.**
 
 Use Skia internally. This can start with the same primitive font API Studio uses today. Do not expose `FontMgr`, `Typeface`, `Font`, or paragraph internals.
 
 Future paragraph/rich text support can be added in a later API expansion.
 
-- [ ] **Step 4: Run text test.**
+- [x] **Step 4: Run text test.**
 
 ```bash
 cargo test --no-default-features native_facade_draws_visible_text_pixels
@@ -749,7 +765,7 @@ cargo test --no-default-features native_facade_draws_visible_text_pixels
 
 Expected: pass.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```bash
 git add src/native/text.rs src/native/recorder.rs tests/native_api_contract.rs
@@ -766,7 +782,7 @@ git commit -m "Add simple text drawing to native Rust facade."
 - Modify: `src/lib.rs`
 - Optional create: `docs/rust-native-api.md`
 
-- [ ] **Step 1: Add README section.**
+- [x] **Step 1: Add README section.**
 
 Add a concise section:
 
@@ -776,7 +792,7 @@ Add a concise section:
 Rust consumers should use `phyron_skia_canvas::native`. That facade is the stable Rust API and intentionally hides Neon and `skia-safe` types. The older public modules exist for Node/Neon compatibility and are not the preferred API for new Rust consumers.
 ```
 
-- [ ] **Step 2: Add boundary note to `src/lib.rs`.**
+- [x] **Step 2: Add boundary note to `src/lib.rs`.**
 
 Use `AIDEV-NOTE`, per blueprints:
 
@@ -786,7 +802,7 @@ Use `AIDEV-NOTE`, per blueprints:
 // crates do not inherit the binding internals.
 ```
 
-- [ ] **Step 3: Audit new public signatures.**
+- [x] **Step 3: Audit new public signatures.**
 
 Run:
 
@@ -798,7 +814,7 @@ Expected: no output.
 
 This command is not sufficient by itself because multiline signatures can evade it. Also inspect `src/native/*.rs` manually.
 
-- [ ] **Step 4: Audit new panics/unwraps.**
+- [x] **Step 4: Audit new panics/unwraps.**
 
 Run:
 
@@ -808,7 +824,7 @@ rg -n "\\.unwrap\\(|\\.expect\\(|panic!|todo!|unimplemented!" src/native tests/n
 
 Expected: no output, except test `expect(...)` calls may remain if they are ordinary test setup assertions. Production `src/native` must have no undocumented panic path.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```bash
 git add README.md src/lib.rs docs/rust-native-api.md
@@ -899,7 +915,7 @@ If vcpkg/rsmpeg work is in-flight and blocks `native-video`, run `native-skia` f
 
 **Files:** none, unless fixes are needed.
 
-- [ ] **Step 1: Run formatting.**
+- [x] **Step 1: Run formatting.**
 
 ```bash
 just fmt-check
@@ -907,7 +923,7 @@ just fmt-check
 
 Expected: pass.
 
-- [ ] **Step 2: Run Rust checks.**
+- [x] **Step 2: Run Rust checks.**
 
 ```bash
 just check
@@ -916,7 +932,7 @@ just lint-check
 
 Expected: pass with zero warnings.
 
-- [ ] **Step 3: Run tests.**
+- [x] **Step 3: Run tests.**
 
 ```bash
 just test
@@ -924,7 +940,7 @@ just test
 
 Expected: pass.
 
-- [ ] **Step 4: Run build.**
+- [x] **Step 4: Run build.**
 
 ```bash
 just build
@@ -932,7 +948,7 @@ just build
 
 Expected: pass.
 
-- [ ] **Step 5: Run aggregate if local environment supports it.**
+- [x] **Step 5: Run aggregate if local environment supports it.**
 
 ```bash
 just ci
@@ -944,7 +960,7 @@ If `just ci` fails due environment-specific native build dependencies, record th
 
 ### Task 12: Commit final plan/implementation state.
 
-- [ ] **Step 1: Check status.**
+- [x] **Step 1: Check status.**
 
 ```bash
 git status --short
@@ -952,7 +968,7 @@ git status --short
 
 Expected: only intentional files changed.
 
-- [ ] **Step 2: Commit.**
+- [x] **Step 2: Commit.**
 
 ```bash
 git add src/native src/lib.rs README.md tests/native_api_contract.rs docs/rust-native-api.md

@@ -74,6 +74,9 @@ vulkano = { version = "0.35", optional = true }
 # windowing
 winit = { version = "0.30", features = ["serde"], optional = true }
 
+[dev-dependencies]
+anyhow = "1"
+
 [build-dependencies]
 cc = "1"
 
