@@ -1,5 +1,50 @@
 # Repository Guidelines for phyron-skia-canvas
 
+This file provides guidance to Claude Code and other AI agents working in this repository.
+
+## Project Context
+
+A fork of [skia-canvas](https://github.com/samizdatco/skia-canvas) — a Node.js native module (Neon/Rust) implementing the HTML Canvas API on top of Skia. Phyron-specific extensions add F16/F32 pixel formats, extended color spaces (P3, Rec.2020, HDR10, HLG, linear), OkLab gradient interpolation, CanvasKit filter parity, variable font axis control, and a `ParagraphBuilder`/`Paragraph` API.
+
+## Blueprint References
+
+Cross-project standards live in `.blueprints/` (git submodule).
+
+### Core rules (must read)
+
+- [Agent Behavior Rules](.blueprints/base/AGENTS.md)
+- [Script and Recipe Naming](.blueprints/base/script-naming.md)
+- [Git Safety](.blueprints/base/git-safety.md)
+- [Test Ownership](.blueprints/base/test-ownership.md)
+- [API Change Protocol](.blueprints/base/api-changes.md)
+
+### Language-specific
+
+- [Rust Agent Rules](.blueprints/lang/rust/AGENTS.md)
+- [Rust Testing](.blueprints/lang/rust/testing.md)
+- [TypeScript Agent Rules](.blueprints/lang/typescript/AGENTS.md)
+- [TypeScript Testing](.blueprints/lang/typescript/testing.md)
+
+### Domain
+
+- [Visual Regression Testing](.blueprints/domain/visual-regression.md)
+- [Phyron Output Types](.blueprints/domain/phyron-outputs.md)
+- [Domain Glossary](.blueprints/domain/glossary.md)
+
+### Reference
+
+- [Writing Style](.blueprints/base/writing-style.md)
+- [Documentation Standards](.blueprints/base/documentation.md)
+- [Commit Messages](.blueprints/base/commit-messages.md)
+- [Defensive Programming](.blueprints/base/defensive-programming.md)
+- [Error Recovery](.blueprints/base/error-recovery.md)
+
+---
+
+## Project-Specific Rules
+
+The rules below override or extend blueprint rules where this project differs.
+
 ## CRITICAL: Git Safety
 
 **NEVER use `git reset --hard`, `git checkout --`, `git clean`, or any destructive git command without FIRST running `git stash`!**
@@ -45,27 +90,22 @@ let coll = self.collection.as_ref().unwrap();
 
 ## Build, Test, and Development Commands
 
+Use `just` (recipe names follow `.blueprints/base/script-naming.md`):
+
 ```bash
-# Build the project (Neon/Node native module).
-cargo build
-
-# IMPORTANT: NEVER use --release unless explicitly requested.
-# Debug builds are faster and sufficient for development.
-
-# Format code.
-cargo fmt --all
-
-# Run clippy linter.
-# NOTE: --all-features includes `metal` which only compiles on macOS.
-# On Linux, use: cargo clippy --all-targets --features "vulkan,window,freetype" -- -D warnings
-cargo clippy --all-targets --all-features -- -D warnings
-
-# Check code without building.
-cargo check
-
-# Run Node.js tests.
-npm test
+just              # show available recipes
+just ci           # fmt-check + check + lint-check + test + build
+just check        # cargo check (Linux feature subset)
+just lint-check   # cargo clippy (Linux feature subset)
+just fmt          # cargo fmt
+just build        # npm dev build of the native module
+just test         # node --test
+just optimized    # release build of the native module
 ```
+
+**Note:** the `metal` feature only compiles on macOS, so the recipes use a Linux-safe feature subset (`vulkan,window,freetype`). Override locally if you're on macOS.
+
+**Never use `--release` unless explicitly requested.** Debug builds are faster and sufficient for development.
 
 ---
 
@@ -149,8 +189,5 @@ No bullet points, long explanations, or multiple paragraphs.
 
 ## Pre-Commit Checklist
 
-1. `cargo fmt --all`
-2. `cargo clippy --all-targets --all-features -- -D warnings` -- must pass clean (on Linux, omit `--all-features` and use `--features "vulkan,window,freetype"`).
-3. `cargo build` -- must compile.
-4. `npm test` -- existing tests must pass.
-5. All `unwrap()`/`expect()` calls must have `// SAFETY:` comments or proper error handling.
+1. `just ci` -- runs `fmt-check check lint-check test build`. All must pass.
+2. All `unwrap()`/`expect()` calls must have `// SAFETY:` comments or proper error handling.

@@ -14,4 +14,7 @@ test/assets/Raleway
 !/Cargo.{toml,lock}
 !/build.rs
 !/.gitignore
+!/.gitattributes
 !/.github
+!/.blueprints
+!/.gitmodules

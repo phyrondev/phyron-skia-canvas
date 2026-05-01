@@ -1,0 +1,1 @@
+../.blueprints/lang/rust/scripts/check-all.sh

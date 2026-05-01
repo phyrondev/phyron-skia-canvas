@@ -1,9 +1,26 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-lib := justfile_directory() / "lib" / "skia.node"
+# Recipe naming follows .blueprints/base/script-naming.md.
+# On Linux, `metal` feature does not compile -- use feature subset.
 
-# Default: build dev binary
-default: build
+lib := justfile_directory() / "lib" / "skia.node"
+linux_features := "vulkan,window,freetype"
+
+# Default: show available recipes.
+default:
+    @just --list
+
+# Aggregate: what CI runs. Uses non-fixing variants.
+ci: fmt-check check lint-check test build
+
+# Re-run blueprints setup script.
+setup:
+    .blueprints/setup.sh --detect
+
+# Update blueprints submodule to latest upstream commit.
+update-blueprints:
+    git submodule update --remote .blueprints
+    @echo "Blueprints updated. Review changes and commit."
 
 [private]
 ensure-deps:
@@ -13,36 +30,52 @@ ensure-deps:
 ensure-binary: ensure-deps
     @test -f {{ lib }} || npm run build -- dev
 
-# Build native module (development)
+# Type-check only, no artifacts.
+check:
+    cargo check --all-targets --features "{{ linux_features }}"
+
+# Run clippy with autofix (modifies working tree).
+lint:
+    cargo clippy --fix --allow-dirty --allow-staged --all-targets --features "{{ linux_features }}" -- -D warnings
+
+# Run clippy without fixing (CI-safe).
+lint-check:
+    cargo clippy --all-targets --features "{{ linux_features }}" -- -D warnings
+
+# Format code.
+fmt:
+    cargo fmt
+
+# Verify formatting without writing.
+fmt-check:
+    cargo fmt -- --check
+
+# Build native module (development).
 build: ensure-deps
     npm run build -- dev
 
-# Build optimized native module
+# Build optimized native module.
 optimized: ensure-deps
     rm -f {{ lib }}
     npm run build
 
-# Build with custom features
+# Build with custom features.
 dev: ensure-deps
     npm run build -- custom
 
-# Run tests
+# Run tests.
 test: ensure-binary
     node --test
 
-# Run tests in watch mode
+# Run tests in watch mode.
 debug: ensure-binary
     node --test --watch
 
-# Run visual tests
+# Run visual tests.
 visual: ensure-binary
     node --watch-path lib --watch-path tests/visual tests/visual
 
-# Type check with cargo
-check:
-    cargo check
-
-# Remove compiled binary
+# Remove compiled binary.
 clean:
     rm -f {{ lib }}
 
