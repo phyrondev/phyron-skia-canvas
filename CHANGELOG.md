@@ -11,7 +11,7 @@
 
 CanvasKit → phyron-skia-canvas API parity, P0 + P1 (see
 `docs/superpowers/specs/2026-05-27-canvaskit-parity-p0-p1-design.md`).
-Both the Node addon and the Rust `native` facade gain:
+Both the Node addon and the Rust crate gain:
 
 ### Text / Paragraph
 
@@ -53,6 +53,23 @@ Both the Node addon and the Rust `native` facade gain:
 
 - **Cubic (Mitchell) sampling**: `ctx.imageSmoothingQuality = "high"`
   now resamples bicubically; native `SamplingMode::Cubic`.
+
+### Rust API shape (breaking, crate only)
+
+The Rust consumer API was made idiomatic. This does not affect the Node
+package, whose JS surface is unchanged.
+
+- The former `skia_canvas::native::*` facade is gone. Its modules now sit
+  at the crate root, re-exported through a new `skia_canvas::prelude`:
+  `use skia_canvas::prelude::*;`.
+- Types dropped their `Native` prefix (there was exactly one of each):
+  `NativePaint` -> `Paint`, `NativeError` -> `Error`,
+  `NativeCanvas` -> `Canvas`, and so on.
+- The Node/Neon binding moved under an internal `pub(crate) mod node`;
+  it is no longer part of the crate's public surface.
+
+  Migration: replace `use skia_canvas::native::{...};` with
+  `use skia_canvas::prelude::*;` and drop the `Native` prefixes.
 
 ## 📦 ⟩ [v3.5.2] ⟩ May 13, 2026
 

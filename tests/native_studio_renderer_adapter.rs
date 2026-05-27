@@ -1,9 +1,9 @@
 //! Studio renderer adapter contract test (Chunk 8A).
 //!
 //! Mirrors the TypeScript `DrawBackend` shape locally to prove the
-//! `skia_canvas::native` facade can carry the Studio renderer
+//! `skia_canvas` facade can carry the Studio renderer
 //! contract without escape hatches into `skia_safe`. This file
-//! intentionally imports nothing outside `skia_canvas::native`
+//! intentionally imports nothing outside `skia_canvas`
 //! plus `anyhow` and `std`. If anything below requires a `use
 //! skia_safe...`, the facade is incomplete and must be expanded in
 //! p-s-c before downstream Studio migration.
@@ -23,7 +23,7 @@ use skia_canvas::prelude::*;
 /// Minimal renderer adapter that mirrors the surface area of the
 /// TypeScript `DrawBackend` (per
 /// `packages/renderer/src/backend/types.ts`). Each method delegates to
-/// `skia_canvas::native` types. The constructor takes an owned
+/// `skia_canvas` types. The constructor takes an owned
 /// `FontManager` so callers can register fonts before any text
 /// runs.
 struct RendererAdapter {

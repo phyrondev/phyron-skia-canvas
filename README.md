@@ -28,14 +28,12 @@ A fork of [samizdatco/skia-canvas] that adds:
 skia-canvas = { version = "0.2", default-features = false, features = ["vulkan", "freetype"] }
 ```
 
-The stable Rust API lives under `skia_canvas::native`. Public signatures never expose `skia_safe` or `neon` types -- a compile-time pin in `tests/native_studio_renderer_adapter.rs` enforces this.
+The stable Rust API is the crate root, re-exported through `skia_canvas::prelude`. Public signatures never expose `skia_safe` or `neon` types -- a compile-time pin in `tests/native_studio_renderer_adapter.rs` enforces this; the Node/Neon binding lives under the internal `node` module.
 
 ```rust
-use skia_canvas::native::{
-    LinearColorSpace, NativeBackend, NativePaint, Rect, RgbaLinear, SurfaceOptions,
-};
+use skia_canvas::prelude::*;
 
-let backend = NativeBackend::new();
+let backend = Backend::new();
 let mut surface = backend.create_surface(
     1920,
     1080,
@@ -49,7 +47,7 @@ surface.with_canvas(|canvas| {
     canvas.clear(RgbaLinear::new_premultiplied(0.0, 0.0, 0.0, 0.0));
     canvas.draw_rect(
         Rect::from_xywh(100.0, 100.0, 200.0, 100.0),
-        &NativePaint::fill(RgbaLinear::opaque(1.0, 0.0, 0.0)),
+        &Paint::fill(RgbaLinear::opaque(1.0, 0.0, 0.0)),
     );
 });
 
