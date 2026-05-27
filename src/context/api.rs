@@ -24,7 +24,7 @@ use crate::{
     },
     utils::*,
 };
-use skia_safe::FourByteTag;
+use skia_safe::{FourByteTag, Paint};
 
 //
 // The js interface for the Context2D struct
@@ -93,6 +93,65 @@ pub fn restore(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let this = cx.argument::<BoxedContext2D>(0)?;
     let mut this = this.borrow_mut();
     this.pop();
+    Ok(cx.undefined())
+}
+
+/// `ctx.saveLayer(alpha?, bounds?, backdrop?)` -- push an isolated layer
+/// that composites onto the canvas on the matching `restore()`. `alpha`
+/// (default 1) and the current `globalCompositeOperation` form the layer
+/// paint; `bounds` is an optional `[x, y, w, h]` hint; `backdrop` is an
+/// optional ImageFilter applied to the content behind the layer.
+pub fn saveLayer(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    let this = cx.argument::<BoxedContext2D>(0)?;
+    let mut this = this.borrow_mut();
+
+    let alpha = opt_float_arg(&mut cx, 1).unwrap_or(1.0);
+
+    // bounds: optional [x, y, w, h] array.
+    let bounds = match cx.argument_opt(2) {
+        Some(arg) if arg.is_a::<JsArray, _>(&mut cx) => {
+            let arr = arg
+                .downcast::<JsArray, _>(&mut cx)
+                .unwrap()
+                .to_vec(&mut cx)?;
+            if arr.len() >= 4 {
+                let mut v = [0f32; 4];
+                for (i, slot) in v.iter_mut().enumerate() {
+                    *slot = arr[i]
+                        .downcast::<JsNumber, _>(&mut cx)
+                        .map(|n| n.value(&mut cx) as f32)
+                        .unwrap_or(0.0);
+                }
+                Some(Rect::from_xywh(v[0], v[1], v[2], v[3]))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+
+    // backdrop: optional ImageFilter applied to the existing content.
+    let backdrop = match cx.argument_opt(3) {
+        Some(arg)
+            if !arg.is_a::<JsNull, _>(&mut cx)
+                && !arg.is_a::<JsUndefined, _>(&mut cx) =>
+        {
+            let f = arg.downcast_or_throw::<BoxedImageFilter, _>(&mut cx)?;
+            if f.borrow().is_deleted() {
+                return cx.throw_error("ImageFilter has been deleted");
+            }
+            Some(f.borrow().inner.clone())
+        }
+        _ => None,
+    };
+
+    let blend_mode = this.state.global_composite_operation;
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+    paint.set_alpha_f(alpha);
+    paint.set_blend_mode(blend_mode);
+
+    this.save_layer(Some(paint), bounds, backdrop);
     Ok(cx.undefined())
 }
 

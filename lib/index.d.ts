@@ -1603,6 +1603,20 @@ interface CanvasState {
   restore(): void;
   /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/save) */
   save(): void;
+  /**
+   * Push an isolated compositing layer (CanvasKit `saveLayer`). Draws
+   * until the matching `restore()` accumulate into the layer, which is
+   * then composited onto the canvas at `alpha` (default 1) with the
+   * current `globalCompositeOperation`. `bounds` is an optional
+   * `[x, y, w, h]` hint; `backdrop` applies an ImageFilter to the
+   * content behind the layer (blur-behind / frosted glass). Not part of
+   * the HTML Canvas standard.
+   */
+  saveLayer(
+    alpha?: number,
+    bounds?: [number, number, number, number] | null,
+    backdrop?: ImageFilter | null,
+  ): void;
 
   // UNIMPLEMENTED
   /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/isContextLost) */

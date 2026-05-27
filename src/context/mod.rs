@@ -6,7 +6,7 @@ use skia_safe::{
     Image, ImageFilter as SkImageFilter, MaskFilter as SkMaskFilter, Paint,
     PaintStyle, Path, PathBuilder, PathFillType, PathOp, Picture,
     PictureRecorder, Point, Rect, Size,
-    canvas::SrcRectConstraint::Strict,
+    canvas::{SaveLayerRec, SrcRectConstraint::Strict},
     dash_path_effect,
     font_style::{FontStyle, Width},
     image_filters, images,
@@ -47,6 +47,10 @@ pub struct Context2D {
     recorder: RefCell<PageRecorder>,
     state: State,
     stack: Vec<State>,
+    /// Parallel to `stack`: whether each saved frame opened a Skia layer
+    /// (via `save_layer`). On `pop`, a layer-owning frame triggers a
+    /// matching `canvas.restore()` to composite the layer.
+    layers: Vec<bool>,
     path: PathBuilder,
 }
 
@@ -244,6 +248,7 @@ impl Context2D {
             recorder: RefCell::new(PageRecorder::new(bounds)),
             path: PathBuilder::new(),
             stack: vec![],
+            layers: vec![],
             state: State::default(),
         }
     }
@@ -385,11 +390,19 @@ impl Context2D {
     pub fn push(&mut self) {
         let new_state = self.state.clone();
         self.stack.push(new_state);
+        self.layers.push(false);
     }
 
     pub fn pop(&mut self) {
         // don't do anything if we're already back at the initial stack frame
         if let Some(old_state) = self.stack.pop() {
+            // If this frame opened a Skia layer (saveLayer), composite it
+            // back onto the destination now with the layer's paint.
+            if self.layers.pop().unwrap_or(false) {
+                self.with_canvas(|canvas| {
+                    canvas.restore();
+                });
+            }
             self.state = old_state;
 
             self.with_recorder(|mut recorder| {
@@ -397,6 +410,37 @@ impl Context2D {
                 recorder.set_clip(&self.state.clip);
             });
         }
+    }
+
+    /// Push a save frame that also opens a Skia layer. Subsequent draws
+    /// accumulate into the layer until the matching `restore()`/`pop`,
+    /// which composites it onto the destination with `paint` (alpha /
+    /// blend mode / image filter). `bounds` is an optional layer-bounds
+    /// hint; `backdrop` is an image filter applied to the existing
+    /// content behind the layer (blur-behind / frosted glass). Mirrors
+    /// CanvasKit's `Canvas.saveLayer(paint?, bounds?, backdrop?)`.
+    pub fn save_layer(
+        &mut self,
+        paint: Option<Paint>,
+        bounds: Option<Rect>,
+        backdrop: Option<SkImageFilter>,
+    ) {
+        self.with_canvas(|canvas| {
+            let mut rec = SaveLayerRec::default();
+            if let Some(p) = paint.as_ref() {
+                rec = rec.paint(p);
+            }
+            if let Some(b) = bounds.as_ref() {
+                rec = rec.bounds(b);
+            }
+            if let Some(bd) = backdrop.as_ref() {
+                rec = rec.backdrop(bd);
+            }
+            canvas.save_layer(&rec);
+        });
+        let new_state = self.state.clone();
+        self.stack.push(new_state);
+        self.layers.push(true);
     }
 
     pub fn scoot(&mut self, point: Point) {
