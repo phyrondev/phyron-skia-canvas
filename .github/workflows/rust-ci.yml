@@ -34,10 +34,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      # Pinned: nightly rustfmt drifts daily, and rustfmt.toml's unstable
+      # options make formatting version-sensitive. Bump this in lockstep
+      # with a `cargo +nightly-<date> fmt` reformat.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-05-25
           components: rustfmt
-      - run: cargo +nightly fmt --all -- --check
+      - run: cargo fmt --all -- --check
 
   # Clippy axes are the features that gate Rust code behind `#[cfg]`:
   # node-addon, window, vulkan, metal. `freetype` is a skia-safe *build*
