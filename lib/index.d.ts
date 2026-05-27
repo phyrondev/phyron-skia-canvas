@@ -1187,6 +1187,35 @@ export class MaskFilter {
   delete(): void;
 }
 
+/**
+ * 4x5 color-matrix helpers (CanvasKit `ColorMatrixHelpers`). Each method
+ * returns a 20-element row-major matrix for `ColorFilter.MakeMatrix`.
+ * Use to build hue-rotate / saturation / brightness grades.
+ */
+export const ColorMatrix: {
+  /** The identity matrix (no color change). */
+  identity(): number[];
+  /** Concatenate two matrices: applies `inner`, then `outer`. */
+  concat(outer: number[], inner: number[]): number[];
+  /** Add a per-channel offset in place; returns the same matrix. */
+  postTranslate(
+    m: number[],
+    dr: number,
+    dg: number,
+    db: number,
+    da: number,
+  ): number[];
+  /** Hue rotation around a color axis (0=red, 1=green, 2=blue). */
+  rotated(axis: 0 | 1 | 2, sine: number, cosine: number): number[];
+  /** Per-channel scale (1 = unchanged). */
+  scaled(
+    redScale: number,
+    greenScale: number,
+    blueScale: number,
+    alphaScale: number,
+  ): number[];
+};
+
 //
 // Context
 //
