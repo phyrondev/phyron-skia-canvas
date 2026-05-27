@@ -50,7 +50,7 @@ pub use recorder::{NativeCanvas, NativeRecorder};
 pub use shader::{GradientInterpolation, GradientStop, NativeShader};
 pub use surface::NativeSurface;
 pub use text::{
-    NativeLineMetrics, NativeTextEngine, NativeTextLayout, RichTextSpan,
-    TextAlign, TextBoxOptions, TextDecoration, TextDecorationStyle, TextShadow,
-    TextSlant, TextStyle, VerticalAlign,
+    FontFeature, NativeLineMetrics, NativeTextEngine, NativeTextLayout,
+    RichTextSpan, TextAlign, TextBoxOptions, TextDecoration,
+    TextDecorationStyle, TextShadow, TextSlant, TextStyle, VerticalAlign,
 };

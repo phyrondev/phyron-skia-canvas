@@ -57,6 +57,38 @@ impl TextSlant {
     }
 }
 
+/// One OpenType feature applied to a text run, mirroring CanvasKit's
+/// `TextFontFeatures { name, value }`. `name` is an OpenType feature tag
+/// (`"smcp"`, `"liga"`, `"onum"`, `"ss01"`, ...); `value` is the feature
+/// selector (`1`/`0` to enable/disable, or an index for alternates).
+/// Unlike variable-font axes ([`FontVariation`]), features are applied
+/// directly on the layout `TextStyle` and need no typeface instancing.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FontFeature {
+    pub name: String,
+    pub value: i32,
+}
+
+impl FontFeature {
+    pub fn new(name: impl Into<String>, value: i32) -> Self {
+        Self {
+            name: name.into(),
+            value,
+        }
+    }
+
+    /// Enable a boolean feature (`value = 1`), e.g.
+    /// `FontFeature::on("smcp")` for small caps.
+    pub fn on(name: impl Into<String>) -> Self {
+        Self::new(name, 1)
+    }
+
+    /// Disable a boolean feature (`value = 0`).
+    pub fn off(name: impl Into<String>) -> Self {
+        Self::new(name, 0)
+    }
+}
+
 /// Paragraph style. The paragraph-level fields (`align`,
 /// `line_height_multiplier`) only apply when this style is used as the
 /// base for a paragraph; per-span overrides via `RichTextSpan` see
@@ -96,6 +128,11 @@ pub struct TextStyle {
     /// add `FontAxisTag::WGHT` here to also vary the `wght` design
     /// axis (without it, the manager synthesizes one from `font_weight`).
     pub font_variations: Vec<FontVariation>,
+    /// OpenType features applied to the run (small caps, ligatures,
+    /// oldstyle/tabular figures, stylistic sets, ...). Mirrors
+    /// CanvasKit's `TextStyle.fontFeatures`. Applied directly on the
+    /// layout `TextStyle`; independent of `font_variations`.
+    pub font_features: Vec<FontFeature>,
 }
 
 impl Default for TextStyle {
@@ -117,6 +154,7 @@ impl Default for TextStyle {
             shadows: Vec::new(),
             baseline_shift: 0.0,
             font_variations: Vec::new(),
+            font_features: Vec::new(),
         }
     }
 }
@@ -578,6 +616,10 @@ fn build_text_style(style: &TextStyle) -> SkTextStyle {
     }
     if style.baseline_shift != 0.0 {
         sk_style.set_baseline_shift(style.baseline_shift);
+    }
+
+    for feature in &style.font_features {
+        sk_style.add_font_feature(&feature.name, feature.value);
     }
 
     let sk_decoration = style.decoration.to_skia();

@@ -1977,6 +1977,18 @@ export interface FontVariationInput {
   value: number;
 }
 
+/**
+ * One OpenType feature applied to a text run. `name` is an OpenType
+ * feature tag ("smcp", "liga", "onum", "tnum", "ss01", "zero", ...);
+ * `value` is the feature selector -- `1`/`0` to enable/disable, or an
+ * index for features with multiple alternates. Defaults to `1` (enable)
+ * when omitted. Mirrors CanvasKit's `TextFontFeatures`.
+ */
+export interface TextFontFeatures {
+  name: string;
+  value?: number;
+}
+
 export interface TextStyleInput {
   fontSize?: number;
   fontFamilies?: string[];
@@ -2003,6 +2015,14 @@ export interface TextStyleInput {
    * referring to axes the typeface doesn't expose are silently dropped.
    */
   fontVariations?: FontVariationInput[];
+  /**
+   * OpenType features applied to the run: small caps (`smcp`/`c2sc`),
+   * ligatures (`liga`/`dlig`), oldstyle/tabular/proportional figures
+   * (`onum`/`lnum`/`tnum`/`pnum`), slashed zero (`zero`), stylistic
+   * sets (`ss01`...`ss20`), and so on. The Canvas2D `fontVariant` path
+   * exposes these too; this is the rich-text/paragraph equivalent.
+   */
+  fontFeatures?: TextFontFeatures[];
 }
 
 export interface ParagraphStyleInput {

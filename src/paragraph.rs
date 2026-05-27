@@ -280,6 +280,31 @@ fn parse_text_style(
         }
     }
 
+    // fontFeatures: [{ name, value }] -- OpenType features (smcp, liga,
+    // onum, ss01, ...). Mirrors CanvasKit's `TextStyle.fontFeatures`. The
+    // Canvas2D path reaches features via `fontVariant`; the paragraph
+    // path needs them here so multi-style server text can drive small
+    // caps and friends. `value` defaults to `1` (enable) when omitted.
+    if let Ok(feats_val) = obj.get::<JsValue, _, _>(cx, "fontFeatures")
+        && let Ok(feats_arr) = feats_val.downcast::<JsArray, _>(cx)
+    {
+        for feat_val in feats_arr.to_vec(cx)? {
+            if let Ok(feat_obj) = feat_val.downcast::<JsObject, _>(cx) {
+                let Some(name) = opt_string_for_key(cx, &feat_obj, "name")
+                else {
+                    continue;
+                };
+                if name.is_empty() {
+                    continue;
+                }
+                let value =
+                    opt_float_for_key(cx, &feat_obj, "value").unwrap_or(1.0)
+                        as i32;
+                style.add_font_feature(name, value);
+            }
+        }
+    }
+
     Ok(style)
 }
 
