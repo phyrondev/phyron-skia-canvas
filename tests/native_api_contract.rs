@@ -4,8 +4,8 @@ use skia_canvas::native::{
     GradientInterpolation, GradientStop, LinearColorSpace, NativeBackend,
     NativeError, NativeFontManager, NativeImage, NativeMaskFilter, NativePaint,
     NativeRecorder, NativeShader, NativeTextEngine, PixelFormat, Point,
-    RawFrameOptions, Rect, RenderEngine, RgbaLinear, SaveLayerOptions,
-    StrutStyle, SurfaceOptions, TextBoxOptions, TextStyle,
+    RawFrameOptions, Rect, RenderEngine, RgbaLinear, SamplingMode,
+    SaveLayerOptions, StrutStyle, SurfaceOptions, TextBoxOptions, TextStyle,
 };
 
 #[test]
@@ -543,6 +543,39 @@ fn shader_gradient_variants_and_noise() -> Result<()> {
     assert!(
         lit > 1000,
         "radial gradient should fill most pixels; lit={lit}"
+    );
+    Ok(())
+}
+
+#[test]
+fn image_cubic_sampling_renders() -> Result<()> {
+    // Cubic (Mitchell) sampling must produce a visible downscale -- the
+    // highest-quality sampler for shrinking / moving imagery.
+    let bytes =
+        std::fs::read("tests/assets/pentagon.png").context("read fixture")?;
+    let image = NativeImage::from_encoded(&bytes).context("decode fixture")?;
+    let mut recorder =
+        NativeRecorder::new(Rect::from_xywh(0.0, 0.0, 32.0, 32.0))?;
+    recorder.record(|canvas| {
+        canvas.clear(RgbaLinear::opaque(0.0, 0.0, 0.0));
+        canvas.draw_image_src(
+            &image,
+            Rect::from_xywh(
+                0.0,
+                0.0,
+                image.width() as f32,
+                image.height() as f32,
+            ),
+            Rect::from_xywh(2.0, 2.0, 28.0, 28.0),
+            None,
+            SamplingMode::Cubic,
+        );
+    });
+    let frame = recorder
+        .render_raw(SurfaceOptions::default(), RawFrameOptions::default())?;
+    assert!(
+        frame.pixels().iter().any(|c| *c != 0),
+        "cubic-sampled image should render visible pixels",
     );
     Ok(())
 }

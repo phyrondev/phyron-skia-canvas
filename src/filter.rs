@@ -3,9 +3,10 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 use skia_safe::{
-    BlurStyle, Color, ColorSpace, FilterMode, ImageFilter as SkImageFilter,
-    MaskFilter, Matrix, MipmapMode, Paint, Point, SamplingOptions, TileMode,
-    color_filters, image_filters, table_color_filter,
+    BlurStyle, Color, ColorSpace, CubicResampler, FilterMode,
+    ImageFilter as SkImageFilter, MaskFilter, Matrix, MipmapMode, Paint, Point,
+    SamplingOptions, TileMode, color_filters, image_filters,
+    table_color_filter,
 };
 use std::fmt;
 
@@ -449,8 +450,11 @@ impl SamplingFilter {
             SamplingQuality::Medium => {
                 SamplingOptions::new(FilterMode::Linear, MipmapMode::Linear)
             }
+            // Mitchell-Netravali bicubic -- the highest-quality sampler,
+            // matching CanvasKit's drawImageCubic for high-quality
+            // down/upscales (Medium stays trilinear).
             SamplingQuality::High => {
-                SamplingOptions::new(FilterMode::Linear, MipmapMode::Linear)
+                SamplingOptions::from(CubicResampler::mitchell())
             }
         }
     }

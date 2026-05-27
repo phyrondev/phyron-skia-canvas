@@ -1,6 +1,6 @@
 use skia_safe::{
-    AlphaType, ColorSpace as SkColorSpace, ColorType, FilterMode, MipmapMode,
-    SamplingOptions,
+    AlphaType, ColorSpace as SkColorSpace, ColorType, CubicResampler,
+    FilterMode, MipmapMode, SamplingOptions,
 };
 
 use crate::native::{
@@ -33,6 +33,11 @@ pub enum SamplingMode {
     #[default]
     Linear,
     Mipmapped,
+    /// Mitchell-Netravali bicubic resampling -- the highest-quality
+    /// option for down/upscaled and moving imagery, where bilinear and
+    /// even trilinear (`Mipmapped`) alias or shimmer. Mirrors CanvasKit's
+    /// `drawImageCubic` / `CubicResampler`.
+    Cubic,
 }
 
 impl SamplingMode {
@@ -47,6 +52,7 @@ impl SamplingMode {
             Self::Mipmapped => {
                 SamplingOptions::new(FilterMode::Linear, MipmapMode::Linear)
             }
+            Self::Cubic => SamplingOptions::from(CubicResampler::mitchell()),
         }
     }
 }
