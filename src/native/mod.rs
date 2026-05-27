@@ -29,31 +29,25 @@ pub mod shader;
 pub mod surface;
 pub mod text;
 
-pub use backend::{
-    EngineKind, NativeBackend, NativeEngineStatus, RenderEngine,
-};
+pub use backend::{Backend, EngineKind, EngineStatus, RenderEngine};
 pub use color::{LinearColorSpace, OutputColorSpace, RgbaLinear};
-pub use error::NativeError;
-pub use filter::{
-    BlurStyle, NativeColorFilter, NativeImageFilter, NativeMaskFilter,
-};
-pub use font::{
-    FontAxisTag, FontVariation, InvalidFontAxisTag, NativeFontManager,
-};
-pub use geometry::{NativeAffine, Point, Rect, Size};
-pub use image::NativeImage;
-pub use paint::{BlendMode, DashPattern, NativePaint, PaintStyle, StrokeCap};
-pub use path::{FillRule, NativePath};
+pub use error::Error;
+pub use filter::{BlurStyle, ColorFilter, ImageFilter, MaskFilter};
+pub use font::{FontAxisTag, FontManager, FontVariation, InvalidFontAxisTag};
+pub use geometry::{Affine, Point, Rect, Size};
+pub use image::Image;
+pub use paint::{BlendMode, DashPattern, Paint, PaintStyle, StrokeCap};
+pub use path::{FillRule, Path};
 pub use pixels::{
     AlphaMode, ExportedPixels, PixelColorSpace, PixelDepth, PixelExportOptions,
     PixelFormat, RawFrame, RawFrameOptions, SamplingMode, SurfaceOptions,
 };
-pub use recorder::{NativeCanvas, NativeRecorder, SaveLayerOptions};
-pub use shader::{GradientInterpolation, GradientStop, NativeShader};
-pub use surface::NativeSurface;
+pub use recorder::{Canvas, Recorder, SaveLayerOptions};
+pub use shader::{GradientInterpolation, GradientStop, Shader};
+pub use surface::Surface;
 pub use text::{
-    FontFeature, NativeLineMetrics, NativeTextEngine, NativeTextLayout,
-    RichTextSpan, StrutStyle, TextAlign, TextBoxOptions, TextDecoration,
-    TextDecorationStyle, TextHeightBehavior, TextShadow, TextSlant, TextStyle,
+    FontFeature, LineMetrics, RichTextSpan, StrutStyle, TextAlign,
+    TextBoxOptions, TextDecoration, TextDecorationStyle, TextEngine,
+    TextHeightBehavior, TextLayout, TextShadow, TextSlant, TextStyle,
     VerticalAlign,
 };

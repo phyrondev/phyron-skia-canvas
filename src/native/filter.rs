@@ -8,33 +8,33 @@ use crate::native::{
     color::{
         RgbaLinear, linear_srgb_color_space, rgba_linear_to_unpremul_color4f,
     },
-    error::NativeError,
+    error::Error,
 };
 
 /// Image-domain filter (blur, drop shadow, color matrix wrapped as image
-/// filter, compose). Composed by `NativePaint` and applied to draws.
+/// filter, compose). Composed by `Paint` and applied to draws.
 #[derive(Clone)]
-pub struct NativeImageFilter {
+pub struct ImageFilter {
     pub(crate) inner: SkImageFilter,
 }
 
-impl std::fmt::Debug for NativeImageFilter {
+impl std::fmt::Debug for ImageFilter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NativeImageFilter").finish_non_exhaustive()
+        f.debug_struct("ImageFilter").finish_non_exhaustive()
     }
 }
 
 /// Color-domain filter (luma, gamma transfers, color matrix, compose).
-/// Composed by `NativePaint` or wrapped as an image filter via
-/// `NativeImageFilter::from_color_filter`.
+/// Composed by `Paint` or wrapped as an image filter via
+/// `ImageFilter::from_color_filter`.
 #[derive(Clone)]
-pub struct NativeColorFilter {
+pub struct ColorFilter {
     pub(crate) inner: SkColorFilter,
 }
 
-impl std::fmt::Debug for NativeColorFilter {
+impl std::fmt::Debug for ColorFilter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NativeColorFilter").finish_non_exhaustive()
+        f.debug_struct("ColorFilter").finish_non_exhaustive()
     }
 }
 
@@ -65,22 +65,22 @@ impl BlurStyle {
 
 /// Coverage-mask filter applied before rasterization. Unlike a plain
 /// image-filter blur, the [`BlurStyle`] variants give glows, feathered
-/// edges, and outline blurs. Composed by [`NativePaint`]. Mirrors
+/// edges, and outline blurs. Composed by [`Paint`]. Mirrors
 /// CanvasKit's `MaskFilter.MakeBlur`.
 ///
-/// [`NativePaint`]: crate::native::NativePaint
+/// [`Paint`]: crate::native::Paint
 #[derive(Clone)]
-pub struct NativeMaskFilter {
+pub struct MaskFilter {
     pub(crate) inner: SkMaskFilter,
 }
 
-impl std::fmt::Debug for NativeMaskFilter {
+impl std::fmt::Debug for MaskFilter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NativeMaskFilter").finish_non_exhaustive()
+        f.debug_struct("MaskFilter").finish_non_exhaustive()
     }
 }
 
-impl NativeMaskFilter {
+impl MaskFilter {
     /// Gaussian coverage blur. `sigma` is the blur standard deviation in
     /// pixels. `respect_ctm` scales the blur with the canvas transform
     /// (zoom / keyframed scale); pass `false` to keep it screen-fixed.
@@ -88,27 +88,27 @@ impl NativeMaskFilter {
         style: BlurStyle,
         sigma: f32,
         respect_ctm: bool,
-    ) -> Result<Self, NativeError> {
+    ) -> Result<Self, Error> {
         SkMaskFilter::blur(style.to_skia(), sigma, respect_ctm)
             .map(|inner| Self { inner })
-            .ok_or_else(|| NativeError::FilterCreate {
+            .ok_or_else(|| Error::FilterCreate {
                 reason: format!("mask blur (style={style:?}, sigma={sigma})"),
             })
     }
 }
 
-impl NativeImageFilter {
+impl ImageFilter {
     /// Gaussian blur with separable sigmas. `input` is the upstream filter
     /// to blur, or `None` to blur the source draw.
     pub fn blur(
         sigma_x: f32,
         sigma_y: f32,
-        input: Option<NativeImageFilter>,
-    ) -> Result<Self, NativeError> {
+        input: Option<ImageFilter>,
+    ) -> Result<Self, Error> {
         let inner = input.map(|f| f.inner);
         image_filters::blur((sigma_x, sigma_y), None, inner, None)
-            .map(|f| NativeImageFilter { inner: f })
-            .ok_or_else(|| NativeError::FilterCreate {
+            .map(|f| ImageFilter { inner: f })
+            .ok_or_else(|| Error::FilterCreate {
                 reason: format!("blur({sigma_x}, {sigma_y}) failed"),
             })
     }
@@ -122,8 +122,8 @@ impl NativeImageFilter {
         sigma_x: f32,
         sigma_y: f32,
         color: RgbaLinear,
-        input: Option<NativeImageFilter>,
-    ) -> Result<Self, NativeError> {
+        input: Option<ImageFilter>,
+    ) -> Result<Self, Error> {
         let unpremul = rgba_linear_to_unpremul_color4f(color);
         let inner = input.map(|f| f.inner);
         // Tag the shadow color as linear-light sRGB. Without an
@@ -138,8 +138,8 @@ impl NativeImageFilter {
             inner,
             None,
         )
-        .map(|f| NativeImageFilter { inner: f })
-        .ok_or_else(|| NativeError::FilterCreate {
+        .map(|f| ImageFilter { inner: f })
+        .ok_or_else(|| Error::FilterCreate {
             reason: format!("drop_shadow({dx}, {dy}) failed"),
         })
     }
@@ -157,45 +157,45 @@ impl NativeImageFilter {
     /// a_in + c_offset`. Offsets are in the 0..1 range for u8 channels.
     pub fn color_matrix(
         matrix: [f32; 20],
-        input: Option<NativeImageFilter>,
-    ) -> Result<Self, NativeError> {
+        input: Option<ImageFilter>,
+    ) -> Result<Self, Error> {
         let cf = color_filters::matrix_row_major(&matrix, None);
         let inner = input.map(|f| f.inner);
         image_filters::color_filter(cf, inner, None)
-            .map(|f| NativeImageFilter { inner: f })
-            .ok_or_else(|| NativeError::FilterCreate {
+            .map(|f| ImageFilter { inner: f })
+            .ok_or_else(|| Error::FilterCreate {
                 reason: "color_matrix failed".to_string(),
             })
     }
 
-    /// Wrap a `NativeColorFilter` as an image filter, optionally chained
+    /// Wrap a `ColorFilter` as an image filter, optionally chained
     /// onto `input`.
     pub fn from_color_filter(
-        color_filter: NativeColorFilter,
-        input: Option<NativeImageFilter>,
-    ) -> Result<Self, NativeError> {
+        color_filter: ColorFilter,
+        input: Option<ImageFilter>,
+    ) -> Result<Self, Error> {
         let inner = input.map(|f| f.inner);
         image_filters::color_filter(color_filter.inner, inner, None)
-            .map(|f| NativeImageFilter { inner: f })
-            .ok_or_else(|| NativeError::FilterCreate {
+            .map(|f| ImageFilter { inner: f })
+            .ok_or_else(|| Error::FilterCreate {
                 reason: "from_color_filter failed".to_string(),
             })
     }
 
     /// Compose two image filters: `outer(inner(source))`.
     pub fn compose(
-        outer: NativeImageFilter,
-        inner: NativeImageFilter,
-    ) -> Result<Self, NativeError> {
+        outer: ImageFilter,
+        inner: ImageFilter,
+    ) -> Result<Self, Error> {
         image_filters::compose(outer.inner, inner.inner)
-            .map(|f| NativeImageFilter { inner: f })
-            .ok_or_else(|| NativeError::FilterCreate {
+            .map(|f| ImageFilter { inner: f })
+            .ok_or_else(|| Error::FilterCreate {
                 reason: "image filter compose failed".to_string(),
             })
     }
 }
 
-impl NativeColorFilter {
+impl ColorFilter {
     /// Skia's luma color filter: output alpha = perceived luminance of the
     /// input RGB, output RGB = 0. Useful as the `inner` filter in a
     /// `destination-in` mask path: luminance becomes the alpha mask.
@@ -223,12 +223,12 @@ impl NativeColorFilter {
 
     /// Compose two color filters: `outer(inner(input))`.
     pub fn compose(
-        outer: NativeColorFilter,
-        inner: NativeColorFilter,
-    ) -> Result<Self, NativeError> {
+        outer: ColorFilter,
+        inner: ColorFilter,
+    ) -> Result<Self, Error> {
         color_filters::compose(outer.inner, inner.inner)
-            .map(|f| NativeColorFilter { inner: f })
-            .ok_or_else(|| NativeError::FilterCreate {
+            .map(|f| ColorFilter { inner: f })
+            .ok_or_else(|| Error::FilterCreate {
                 reason: "color filter compose failed".to_string(),
             })
     }

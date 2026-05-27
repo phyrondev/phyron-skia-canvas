@@ -1,24 +1,22 @@
 use anyhow::{Context, Result};
 use skia_canvas::native::{
-    BlendMode, BlurStyle, EngineKind, FontAxisTag, FontFeature, FontVariation,
-    GradientInterpolation, GradientStop, LinearColorSpace, NativeBackend,
-    NativeError, NativeFontManager, NativeImage, NativeMaskFilter, NativePaint,
-    NativeRecorder, NativeShader, NativeTextEngine, PixelFormat, Point,
-    RawFrameOptions, Rect, RenderEngine, RgbaLinear, SamplingMode,
-    SaveLayerOptions, StrutStyle, SurfaceOptions, TextBoxOptions, TextStyle,
+    Backend, BlendMode, BlurStyle, EngineKind, Error, FontAxisTag, FontFeature,
+    FontManager, FontVariation, GradientInterpolation, GradientStop, Image,
+    LinearColorSpace, MaskFilter, Paint, PixelFormat, Point, RawFrameOptions,
+    Recorder, Rect, RenderEngine, RgbaLinear, SamplingMode, SaveLayerOptions,
+    Shader, StrutStyle, SurfaceOptions, TextBoxOptions, TextEngine, TextStyle,
 };
 
 #[test]
 fn native_facade_renders_tight_rgba8_without_importing_skia_safe() -> Result<()>
 {
-    let mut recorder =
-        NativeRecorder::new(Rect::from_xywh(0.0, 0.0, 8.0, 8.0))?;
+    let mut recorder = Recorder::new(Rect::from_xywh(0.0, 0.0, 8.0, 8.0))?;
 
     recorder.record(|canvas| {
         canvas.clear(RgbaLinear::opaque(0.0, 0.0, 0.0));
         canvas.draw_rect(
             Rect::from_xywh(2.0, 2.0, 4.0, 4.0),
-            &NativePaint::fill(RgbaLinear::opaque(1.0, 0.0, 0.0)),
+            &Paint::fill(RgbaLinear::opaque(1.0, 0.0, 0.0)),
         );
     });
 
@@ -48,8 +46,7 @@ fn native_facade_constructs_required_linear_working_spaces() -> Result<()> {
         LinearColorSpace::DisplayP3,
         LinearColorSpace::Rec2020,
     ] {
-        let mut recorder =
-            NativeRecorder::new(Rect::from_xywh(0.0, 0.0, 4.0, 4.0))?;
+        let mut recorder = Recorder::new(Rect::from_xywh(0.0, 0.0, 4.0, 4.0))?;
         recorder
             .record(|canvas| canvas.clear(RgbaLinear::opaque(0.25, 0.5, 1.5)));
         let frame = recorder.render_raw(
@@ -67,22 +64,21 @@ fn native_facade_constructs_required_linear_working_spaces() -> Result<()> {
 
 #[test]
 fn native_facade_draws_shapes() -> Result<()> {
-    let mut recorder =
-        NativeRecorder::new(Rect::from_xywh(0.0, 0.0, 64.0, 64.0))?;
+    let mut recorder = Recorder::new(Rect::from_xywh(0.0, 0.0, 64.0, 64.0))?;
     recorder.record(|canvas| {
         canvas.clear(RgbaLinear::opaque(0.0, 0.0, 0.0));
         canvas.draw_rect(
             Rect::from_xywh(4.0, 4.0, 16.0, 16.0),
-            &NativePaint::fill(RgbaLinear::opaque(1.0, 0.0, 0.0)),
+            &Paint::fill(RgbaLinear::opaque(1.0, 0.0, 0.0)),
         );
         canvas.draw_rounded_rect(
             Rect::from_xywh(24.0, 4.0, 16.0, 16.0),
             4.0,
-            &NativePaint::stroke(RgbaLinear::opaque(0.0, 1.0, 0.0), 2.0),
+            &Paint::stroke(RgbaLinear::opaque(0.0, 1.0, 0.0), 2.0),
         );
         canvas.draw_oval(
             Rect::from_xywh(44.0, 4.0, 16.0, 16.0),
-            &NativePaint::fill(RgbaLinear::opaque(0.0, 0.0, 1.0)),
+            &Paint::fill(RgbaLinear::opaque(0.0, 0.0, 1.0)),
         );
     });
     let frame = recorder
@@ -115,12 +111,11 @@ fn native_facade_draws_shapes() -> Result<()> {
 fn native_facade_decodes_and_draws_encoded_image() -> Result<()> {
     let bytes =
         std::fs::read("tests/assets/pentagon.png").context("read fixture")?;
-    let image = NativeImage::from_encoded(&bytes).context("decode fixture")?;
+    let image = Image::from_encoded(&bytes).context("decode fixture")?;
     assert!(image.width() > 0);
     assert!(image.height() > 0);
 
-    let mut recorder =
-        NativeRecorder::new(Rect::from_xywh(0.0, 0.0, 32.0, 32.0))?;
+    let mut recorder = Recorder::new(Rect::from_xywh(0.0, 0.0, 32.0, 32.0))?;
     recorder.record(|canvas| {
         canvas.clear(RgbaLinear::opaque(0.0, 0.0, 0.0));
         canvas.draw_image_rect(
@@ -139,7 +134,7 @@ fn native_facade_decodes_and_draws_encoded_image() -> Result<()> {
 #[test]
 fn engine_auto_resolves_and_draws() -> Result<()> {
     // Auto must always succeed; surface reports a concrete engine kind.
-    let backend = NativeBackend::new();
+    let backend = Backend::new();
     let mut surface = backend.create_surface(
         16,
         16,
@@ -154,7 +149,7 @@ fn engine_auto_resolves_and_draws() -> Result<()> {
         canvas.clear(RgbaLinear::opaque(0.0, 0.0, 0.0));
         canvas.draw_rect(
             Rect::from_xywh(2.0, 2.0, 10.0, 10.0),
-            &NativePaint::fill(RgbaLinear::opaque(1.0, 0.0, 0.0)),
+            &Paint::fill(RgbaLinear::opaque(1.0, 0.0, 0.0)),
         );
     });
     surface.flush();
@@ -166,7 +161,7 @@ fn engine_auto_resolves_and_draws() -> Result<()> {
 #[test]
 fn engine_cpu_is_always_available() -> Result<()> {
     // CPU must work everywhere, including builds without GPU features.
-    let backend = NativeBackend::new();
+    let backend = Backend::new();
     let mut surface = backend.create_surface(
         8,
         8,
@@ -189,7 +184,7 @@ fn engine_gpu_either_works_or_returns_engine_unavailable() {
     // The Gpu choice is non-deterministic across CI machines; either it
     // succeeds, or it surfaces EngineUnavailable. Anything else is a
     // contract break.
-    let backend = NativeBackend::new();
+    let backend = Backend::new();
     let result = backend.create_surface(
         8,
         8,
@@ -200,7 +195,7 @@ fn engine_gpu_either_works_or_returns_engine_unavailable() {
     );
     match result {
         Ok(s) => assert_eq!(s.engine(), EngineKind::Gpu),
-        Err(NativeError::EngineUnavailable {
+        Err(Error::EngineUnavailable {
             engine: RenderEngine::Gpu,
             ..
         }) => {}
@@ -210,7 +205,7 @@ fn engine_gpu_either_works_or_returns_engine_unavailable() {
 
 #[test]
 fn engine_status_reports_typed_fields() {
-    let backend = NativeBackend::new();
+    let backend = Backend::new();
     let auto = backend.engine_status(RenderEngine::Auto);
     let cpu = backend.engine_status(RenderEngine::Cpu);
 
@@ -236,8 +231,7 @@ fn engine_status_reports_typed_fields() {
 
 #[test]
 fn native_facade_draws_visible_text_pixels() -> Result<()> {
-    let mut recorder =
-        NativeRecorder::new(Rect::from_xywh(0.0, 0.0, 128.0, 64.0))?;
+    let mut recorder = Recorder::new(Rect::from_xywh(0.0, 0.0, 128.0, 64.0))?;
     recorder.record(|canvas| {
         canvas.clear(RgbaLinear::opaque(0.0, 0.0, 0.0));
         canvas.draw_text_box(
@@ -272,10 +266,10 @@ fn text_layout_honors_font_variations_wght_axis() -> Result<()> {
     let font_bytes =
         std::fs::read("tests/assets/Oswald/Oswald-VariableFont_wght.ttf")
             .context("oswald-vf")?;
-    let fm = NativeFontManager::new();
+    let fm = FontManager::new();
     fm.register_font_from_data("Oswald", &font_bytes)?;
-    let engine = NativeTextEngine::new(&fm);
-    let backend = NativeBackend::new();
+    let engine = TextEngine::new(&fm);
+    let backend = Backend::new();
 
     let ink_at = |wght: f32| -> Result<usize> {
         let mut surface = backend.create_surface(
@@ -319,7 +313,7 @@ fn text_layout_honors_font_variations_wght_axis() -> Result<()> {
 fn text_layout_font_features_apply_without_error() -> Result<()> {
     // Features that the typeface may or may not implement must never
     // break layout; they're applied on the layout `TextStyle` directly.
-    let engine = NativeTextEngine::with_system_fonts();
+    let engine = TextEngine::with_system_fonts();
     let style = TextStyle {
         font_size: 32.0,
         color: RgbaLinear::opaque(1.0, 1.0, 1.0),
@@ -339,7 +333,7 @@ fn text_layout_font_features_apply_without_error() -> Result<()> {
 
 #[test]
 fn text_layout_strut_forces_line_height() -> Result<()> {
-    let engine = NativeTextEngine::with_system_fonts();
+    let engine = TextEngine::with_system_fonts();
     let base = TextStyle {
         font_size: 16.0,
         ..TextStyle::default()
@@ -366,7 +360,7 @@ fn text_layout_strut_forces_line_height() -> Result<()> {
 
 #[test]
 fn text_layout_reports_max_line_overflow() -> Result<()> {
-    let engine = NativeTextEngine::with_system_fonts();
+    let engine = TextEngine::with_system_fonts();
     let style = TextStyle {
         font_size: 20.0,
         max_lines: Some(1),
@@ -389,7 +383,7 @@ fn text_layout_reports_max_line_overflow() -> Result<()> {
 
 #[test]
 fn text_layout_unresolved_codepoints_empty_for_latin() -> Result<()> {
-    let engine = NativeTextEngine::with_system_fonts();
+    let engine = TextEngine::with_system_fonts();
     let style = TextStyle {
         font_size: 24.0,
         ..TextStyle::default()
@@ -405,12 +399,11 @@ fn text_layout_unresolved_codepoints_empty_for_latin() -> Result<()> {
 
 #[test]
 fn paint_mask_blur_spreads_ink_beyond_rect() -> Result<()> {
-    let mut recorder =
-        NativeRecorder::new(Rect::from_xywh(0.0, 0.0, 64.0, 64.0))?;
-    let blur = NativeMaskFilter::blur(BlurStyle::Normal, 6.0, true)?;
+    let mut recorder = Recorder::new(Rect::from_xywh(0.0, 0.0, 64.0, 64.0))?;
+    let blur = MaskFilter::blur(BlurStyle::Normal, 6.0, true)?;
     recorder.record(|canvas| {
         canvas.clear(RgbaLinear::opaque(0.0, 0.0, 0.0));
-        let mut paint = NativePaint::fill(RgbaLinear::opaque(1.0, 1.0, 1.0));
+        let mut paint = Paint::fill(RgbaLinear::opaque(1.0, 1.0, 1.0));
         paint.set_mask_filter(Some(blur.clone()));
         canvas.draw_rect(Rect::from_xywh(24.0, 24.0, 16.0, 16.0), &paint);
     });
@@ -435,21 +428,20 @@ fn paint_compositing_extras_render() -> Result<()> {
     // Exercise setDither, the Clear blend mode, and saveLayer-with-bounds
     // in one pass: clear white, dithered fill, then Clear-erase a hole,
     // grouped inside an explicit layer. The center must end up non-white.
-    let mut recorder =
-        NativeRecorder::new(Rect::from_xywh(0.0, 0.0, 32.0, 32.0))?;
+    let mut recorder = Recorder::new(Rect::from_xywh(0.0, 0.0, 32.0, 32.0))?;
     recorder.record(|canvas| {
         canvas.clear(RgbaLinear::opaque(1.0, 1.0, 1.0));
-        let mut group = NativePaint::fill(RgbaLinear::opaque(0.0, 0.0, 0.0));
+        let mut group = Paint::fill(RgbaLinear::opaque(0.0, 0.0, 0.0));
         group.set_alpha(0.5);
         canvas.save_layer_with(SaveLayerOptions {
             paint: Some(&group),
             bounds: Some(Rect::from_xywh(0.0, 0.0, 32.0, 32.0)),
             backdrop: None,
         });
-        let mut fill = NativePaint::fill(RgbaLinear::opaque(0.2, 0.4, 0.8));
+        let mut fill = Paint::fill(RgbaLinear::opaque(0.2, 0.4, 0.8));
         fill.set_dither(true);
         canvas.draw_rect(Rect::from_xywh(0.0, 0.0, 32.0, 32.0), &fill);
-        let mut eraser = NativePaint::fill(RgbaLinear::opaque(0.0, 0.0, 0.0));
+        let mut eraser = Paint::fill(RgbaLinear::opaque(0.0, 0.0, 0.0));
         eraser.set_blend_mode(BlendMode::Clear);
         canvas.draw_rect(Rect::from_xywh(8.0, 8.0, 16.0, 16.0), &eraser);
         canvas.restore();
@@ -489,20 +481,10 @@ fn shader_gradient_variants_and_noise() -> Result<()> {
     ];
     let interp = GradientInterpolation::Srgb;
     // Every factory must build a shader from valid stops.
-    let radial = NativeShader::radial_gradient(
-        Point::new(32.0, 32.0),
-        30.0,
-        &stops,
-        interp,
-    )?;
-    NativeShader::sweep_gradient(
-        Point::new(32.0, 32.0),
-        0.0,
-        360.0,
-        &stops,
-        interp,
-    )?;
-    NativeShader::two_point_conical_gradient(
+    let radial =
+        Shader::radial_gradient(Point::new(32.0, 32.0), 30.0, &stops, interp)?;
+    Shader::sweep_gradient(Point::new(32.0, 32.0), 0.0, 360.0, &stops, interp)?;
+    Shader::two_point_conical_gradient(
         Point::new(16.0, 32.0),
         0.0,
         Point::new(48.0, 32.0),
@@ -510,11 +492,11 @@ fn shader_gradient_variants_and_noise() -> Result<()> {
         &stops,
         interp,
     )?;
-    NativeShader::fractal_noise(0.1, 0.1, 2, 1.0)?;
-    NativeShader::turbulence(0.2, 0.2, 3, 7.0)?;
+    Shader::fractal_noise(0.1, 0.1, 2, 1.0)?;
+    Shader::turbulence(0.2, 0.2, 3, 7.0)?;
     // A single stop is rejected.
     assert!(
-        NativeShader::radial_gradient(
+        Shader::radial_gradient(
             Point::new(0.0, 0.0),
             1.0,
             &stops[..1],
@@ -525,11 +507,10 @@ fn shader_gradient_variants_and_noise() -> Result<()> {
     );
 
     // Painting the radial gradient over the surface fills it with color.
-    let mut recorder =
-        NativeRecorder::new(Rect::from_xywh(0.0, 0.0, 64.0, 64.0))?;
+    let mut recorder = Recorder::new(Rect::from_xywh(0.0, 0.0, 64.0, 64.0))?;
     recorder.record(|canvas| {
         canvas.clear(RgbaLinear::opaque(0.0, 0.0, 0.0));
-        let mut paint = NativePaint::fill(RgbaLinear::opaque(1.0, 1.0, 1.0));
+        let mut paint = Paint::fill(RgbaLinear::opaque(1.0, 1.0, 1.0));
         paint.set_shader(Some(radial.clone()));
         canvas.draw_rect(Rect::from_xywh(0.0, 0.0, 64.0, 64.0), &paint);
     });
@@ -553,9 +534,8 @@ fn image_cubic_sampling_renders() -> Result<()> {
     // highest-quality sampler for shrinking / moving imagery.
     let bytes =
         std::fs::read("tests/assets/pentagon.png").context("read fixture")?;
-    let image = NativeImage::from_encoded(&bytes).context("decode fixture")?;
-    let mut recorder =
-        NativeRecorder::new(Rect::from_xywh(0.0, 0.0, 32.0, 32.0))?;
+    let image = Image::from_encoded(&bytes).context("decode fixture")?;
+    let mut recorder = Recorder::new(Rect::from_xywh(0.0, 0.0, 32.0, 32.0))?;
     recorder.record(|canvas| {
         canvas.clear(RgbaLinear::opaque(0.0, 0.0, 0.0));
         canvas.draw_image_src(

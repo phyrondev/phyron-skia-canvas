@@ -7,7 +7,7 @@ use skia_safe::{
     shaders as noise_shaders,
 };
 
-use crate::native::{color::RgbaLinear, error::NativeError, geometry::Point};
+use crate::native::{color::RgbaLinear, error::Error, geometry::Point};
 
 /// Color-interpolation space for gradient stops. Mirrors Skia's
 /// `gradient::Interpolation::ColorSpace`.
@@ -45,22 +45,22 @@ pub struct GradientStop {
     pub color: RgbaLinear,
 }
 
-/// Public shader handle used by `NativePaint::set_shader`. Exposes the
+/// Public shader handle used by `Paint::set_shader`. Exposes the
 /// gradient factories (linear / radial / sweep / two-point conical) plus
 /// procedural Perlin noise (fractal noise / turbulence). Mirrors the
 /// CanvasKit `ShaderFactory` surface.
 #[derive(Clone)]
-pub struct NativeShader {
+pub struct Shader {
     pub(crate) inner: SkShader,
 }
 
-impl std::fmt::Debug for NativeShader {
+impl std::fmt::Debug for Shader {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NativeShader").finish_non_exhaustive()
+        f.debug_struct("Shader").finish_non_exhaustive()
     }
 }
 
-impl NativeShader {
+impl Shader {
     /// Validate `stops` and produce the unpremultiplied `Color4f` list,
     /// position list, and interpolation config shared by every gradient
     /// factory. Stops must be >= 2, sorted ascending, with the first and
@@ -68,15 +68,15 @@ impl NativeShader {
     fn prepare_stops(
         stops: &[GradientStop],
         interpolation_space: GradientInterpolation,
-    ) -> Result<(Vec<Color4f>, Vec<f32>, Interpolation), NativeError> {
+    ) -> Result<(Vec<Color4f>, Vec<f32>, Interpolation), Error> {
         if stops.len() < 2 {
-            return Err(NativeError::InvalidGradient {
+            return Err(Error::InvalidGradient {
                 reason: format!("need at least 2 stops, got {}", stops.len()),
             });
         }
         for window in stops.windows(2) {
             if window[1].position < window[0].position {
-                return Err(NativeError::InvalidGradient {
+                return Err(Error::InvalidGradient {
                     reason: format!(
                         "stops must be sorted by position; saw {} after {}",
                         window[1].position, window[0].position
@@ -88,7 +88,7 @@ impl NativeShader {
         let last_pos = stops[stops.len() - 1].position;
         if !(0.0..=1.0).contains(&first_pos) || !(0.0..=1.0).contains(&last_pos)
         {
-            return Err(NativeError::InvalidGradient {
+            return Err(Error::InvalidGradient {
                 reason: format!(
                     "stop positions must be in 0..=1, got [{first_pos}..{last_pos}]"
                 ),
@@ -132,7 +132,7 @@ impl NativeShader {
         end: Point,
         stops: &[GradientStop],
         interpolation_space: GradientInterpolation,
-    ) -> Result<Self, NativeError> {
+    ) -> Result<Self, Error> {
         let (colors, positions, interp) =
             Self::prepare_stops(stops, interpolation_space)?;
         // `Colors::new` carries the stops + positions + tile mode +
@@ -153,7 +153,7 @@ impl NativeShader {
             &gradient,
             None,
         )
-        .ok_or_else(|| NativeError::InvalidGradient {
+        .ok_or_else(|| Error::InvalidGradient {
             reason: "skia could not build linear gradient".to_string(),
         })?;
         Ok(Self { inner: shader })
@@ -165,7 +165,7 @@ impl NativeShader {
         radius: f32,
         stops: &[GradientStop],
         interpolation_space: GradientInterpolation,
-    ) -> Result<Self, NativeError> {
+    ) -> Result<Self, Error> {
         let (colors, positions, interp) =
             Self::prepare_stops(stops, interpolation_space)?;
         let stop_colors = GradientColors::new(
@@ -180,7 +180,7 @@ impl NativeShader {
             &gradient,
             None,
         )
-        .ok_or_else(|| NativeError::InvalidGradient {
+        .ok_or_else(|| Error::InvalidGradient {
             reason: "skia could not build radial gradient".to_string(),
         })?;
         Ok(Self { inner: shader })
@@ -194,7 +194,7 @@ impl NativeShader {
         end_angle: f32,
         stops: &[GradientStop],
         interpolation_space: GradientInterpolation,
-    ) -> Result<Self, NativeError> {
+    ) -> Result<Self, Error> {
         let (colors, positions, interp) =
             Self::prepare_stops(stops, interpolation_space)?;
         let stop_colors = GradientColors::new(
@@ -210,7 +210,7 @@ impl NativeShader {
             &gradient,
             None,
         )
-        .ok_or_else(|| NativeError::InvalidGradient {
+        .ok_or_else(|| Error::InvalidGradient {
             reason: "skia could not build sweep gradient".to_string(),
         })?;
         Ok(Self { inner: shader })
@@ -227,7 +227,7 @@ impl NativeShader {
         end_radius: f32,
         stops: &[GradientStop],
         interpolation_space: GradientInterpolation,
-    ) -> Result<Self, NativeError> {
+    ) -> Result<Self, Error> {
         let (colors, positions, interp) =
             Self::prepare_stops(stops, interpolation_space)?;
         let stop_colors = GradientColors::new(
@@ -243,7 +243,7 @@ impl NativeShader {
             &gradient,
             None,
         )
-        .ok_or_else(|| NativeError::InvalidGradient {
+        .ok_or_else(|| Error::InvalidGradient {
             reason: "skia could not build two-point conical gradient"
                 .to_string(),
         })?;
@@ -259,14 +259,14 @@ impl NativeShader {
         base_frequency_y: f32,
         octaves: usize,
         seed: f32,
-    ) -> Result<Self, NativeError> {
+    ) -> Result<Self, Error> {
         let shader = noise_shaders::fractal_noise(
             (base_frequency_x, base_frequency_y),
             octaves,
             seed,
             None,
         )
-        .ok_or_else(|| NativeError::InvalidGradient {
+        .ok_or_else(|| Error::InvalidGradient {
             reason: "skia could not build fractal noise shader".to_string(),
         })?;
         Ok(Self { inner: shader })
@@ -280,14 +280,14 @@ impl NativeShader {
         base_frequency_y: f32,
         octaves: usize,
         seed: f32,
-    ) -> Result<Self, NativeError> {
+    ) -> Result<Self, Error> {
         let shader = noise_shaders::turbulence(
             (base_frequency_x, base_frequency_y),
             octaves,
             seed,
             None,
         )
-        .ok_or_else(|| NativeError::InvalidGradient {
+        .ok_or_else(|| Error::InvalidGradient {
             reason: "skia could not build turbulence shader".to_string(),
         })?;
         Ok(Self { inner: shader })

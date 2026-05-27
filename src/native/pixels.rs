@@ -6,7 +6,7 @@ use skia_safe::{
 use crate::native::{
     backend::RenderEngine,
     color::{LinearColorSpace, OutputColorSpace},
-    error::NativeError,
+    error::Error,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -161,9 +161,7 @@ impl ExportedPixels {
 }
 
 impl PixelColorSpace {
-    pub(crate) fn to_skia_color_space(
-        self,
-    ) -> Result<SkColorSpace, NativeError> {
+    pub(crate) fn to_skia_color_space(self) -> Result<SkColorSpace, Error> {
         use skia_safe::{named_primaries, named_transfer_fn};
         match self {
             Self::Srgb => Ok(SkColorSpace::new_srgb()),
@@ -172,30 +170,22 @@ impl PixelColorSpace {
                 named_primaries::CicpId::SMPTE_EG_432_1,
                 named_transfer_fn::CicpId::IEC61966_2_1,
             )
-            .ok_or(NativeError::UnsupportedPixelColorSpace {
-                color_space: self,
-            }),
+            .ok_or(Error::UnsupportedPixelColorSpace { color_space: self }),
             Self::DisplayP3Linear => SkColorSpace::new_cicp(
                 named_primaries::CicpId::SMPTE_EG_432_1,
                 named_transfer_fn::CicpId::Linear,
             )
-            .ok_or(NativeError::UnsupportedPixelColorSpace {
-                color_space: self,
-            }),
+            .ok_or(Error::UnsupportedPixelColorSpace { color_space: self }),
             Self::Rec2020 => SkColorSpace::new_cicp(
                 named_primaries::CicpId::Rec2020,
                 named_transfer_fn::CicpId::Rec709,
             )
-            .ok_or(NativeError::UnsupportedPixelColorSpace {
-                color_space: self,
-            }),
+            .ok_or(Error::UnsupportedPixelColorSpace { color_space: self }),
             Self::Rec2020Linear => SkColorSpace::new_cicp(
                 named_primaries::CicpId::Rec2020,
                 named_transfer_fn::CicpId::Linear,
             )
-            .ok_or(NativeError::UnsupportedPixelColorSpace {
-                color_space: self,
-            }),
+            .ok_or(Error::UnsupportedPixelColorSpace { color_space: self }),
         }
     }
 }
@@ -314,7 +304,7 @@ impl RawFrame {
 }
 
 impl PixelFormat {
-    pub(crate) fn to_skia_color_type(self) -> Result<ColorType, NativeError> {
+    pub(crate) fn to_skia_color_type(self) -> Result<ColorType, Error> {
         match self {
             Self::Rgba8UnormPremul | Self::Rgba8UnormUnpremul => {
                 Ok(ColorType::RGBA8888)

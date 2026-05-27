@@ -5,8 +5,8 @@ use skia_safe::{
 
 use crate::native::{
     color::{RgbaLinear, rgba_linear_to_unpremul_color4f},
-    filter::{NativeColorFilter, NativeImageFilter, NativeMaskFilter},
-    shader::NativeShader,
+    filter::{ColorFilter, ImageFilter, MaskFilter},
+    shader::Shader,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -111,12 +111,12 @@ impl BlendMode {
     }
 }
 
-/// Mutable paint state used by all `NativeCanvas` drawing methods. Mirrors
+/// Mutable paint state used by all `Canvas` drawing methods. Mirrors
 /// the renderer-side paint accumulator from `@phyron/studio-renderer`. A
 /// single paint instance carries either fill or stroke style; to render
 /// both, issue two draws with two paints (matches Skia's `SkPaint`).
 #[derive(Debug, Clone)]
-pub struct NativePaint {
+pub struct Paint {
     pub color: RgbaLinear,
     pub style: PaintStyle,
     pub stroke_width: f32,
@@ -125,18 +125,18 @@ pub struct NativePaint {
     pub anti_alias: bool,
     pub alpha: f32,
     pub blend_mode: BlendMode,
-    pub shader: Option<NativeShader>,
-    pub image_filter: Option<NativeImageFilter>,
-    pub color_filter: Option<NativeColorFilter>,
+    pub shader: Option<Shader>,
+    pub image_filter: Option<ImageFilter>,
+    pub color_filter: Option<ColorFilter>,
     /// Coverage-mask filter (styled blur). Applied before rasterization
     /// for glows, feathered edges, and outline blurs.
-    pub mask_filter: Option<NativeMaskFilter>,
+    pub mask_filter: Option<MaskFilter>,
     /// Dither the paint to break up banding in gradients and dark
     /// frames on 8-bit surfaces. Mirrors CanvasKit's `Paint.setDither`.
     pub dither: bool,
 }
 
-impl Default for NativePaint {
+impl Default for Paint {
     fn default() -> Self {
         Self {
             color: RgbaLinear::opaque(0.0, 0.0, 0.0),
@@ -156,7 +156,7 @@ impl Default for NativePaint {
     }
 }
 
-impl NativePaint {
+impl Paint {
     pub fn fill(color: RgbaLinear) -> Self {
         Self {
             color,
@@ -219,14 +219,14 @@ impl NativePaint {
         self
     }
 
-    pub fn set_shader(&mut self, shader: Option<NativeShader>) -> &mut Self {
+    pub fn set_shader(&mut self, shader: Option<Shader>) -> &mut Self {
         self.shader = shader;
         self
     }
 
     pub fn set_image_filter(
         &mut self,
-        filter: Option<NativeImageFilter>,
+        filter: Option<ImageFilter>,
     ) -> &mut Self {
         self.image_filter = filter;
         self
@@ -234,16 +234,13 @@ impl NativePaint {
 
     pub fn set_color_filter(
         &mut self,
-        filter: Option<NativeColorFilter>,
+        filter: Option<ColorFilter>,
     ) -> &mut Self {
         self.color_filter = filter;
         self
     }
 
-    pub fn set_mask_filter(
-        &mut self,
-        filter: Option<NativeMaskFilter>,
-    ) -> &mut Self {
+    pub fn set_mask_filter(&mut self, filter: Option<MaskFilter>) -> &mut Self {
         self.mask_filter = filter;
         self
     }

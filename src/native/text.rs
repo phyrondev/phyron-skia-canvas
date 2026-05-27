@@ -21,7 +21,7 @@ use crate::native::{
         RgbaLinear, linear_srgb_color_space, rgba_linear_to_skia_color,
         rgba_linear_to_unpremul_color4f,
     },
-    font::{FontVariation, NativeFontManager},
+    font::{FontManager, FontVariation},
     geometry::Rect,
 };
 
@@ -202,7 +202,7 @@ pub struct TextStyle {
     pub text_height_behavior: TextHeightBehavior,
     /// Maximum number of lines (paragraph-level). `None` is unbounded.
     /// When set, overflow past this limit is reported by
-    /// [`NativeTextLayout::did_exceed_max_lines`]. Mirrors CanvasKit's
+    /// [`TextLayout::did_exceed_max_lines`]. Mirrors CanvasKit's
     /// `ParagraphStyle.maxLines`.
     pub max_lines: Option<usize>,
 }
@@ -321,7 +321,7 @@ pub struct RichTextSpan {
 /// Per-line layout metrics. `start_index` and `end_index` are byte
 /// offsets into the laid-out paragraph text.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct NativeLineMetrics {
+pub struct LineMetrics {
     pub line_number: usize,
     pub start_index: usize,
     pub end_index: usize,
@@ -362,24 +362,24 @@ impl Default for TextBoxOptions {
 /// Build laid-out text from a `TextStyle` and a maximum line width.
 /// Construct with `new(font_manager)` to use a registered font registry,
 /// or `with_system_fonts()` for the platform's default fonts only.
-pub struct NativeTextEngine {
+pub struct TextEngine {
     pub(crate) collection: FontCollection,
     /// Asset-side `TypefaceFontProvider` snapshot kept so per-call
     /// font collections (used when a `TextStyle` carries
     /// `font_variations`) can re-attach it. `None` for
     /// `with_system_fonts()` engines.
     asset_provider: Option<TypefaceFontProvider>,
-    /// Registered family aliases on the source `NativeFontManager`,
+    /// Registered family aliases on the source `FontManager`,
     /// captured at construction time. Used to remap instantiated
     /// variable typefaces onto the alias the caller registered them
     /// under (instead of the typeface's intrinsic family name).
     registered_families: Vec<String>,
 }
 
-impl NativeTextEngine {
+impl TextEngine {
     /// Build using `font_manager`'s registered typefaces plus system
     /// fallbacks for unmatched family names.
-    pub fn new(font_manager: &NativeFontManager) -> Self {
+    pub fn new(font_manager: &FontManager) -> Self {
         let asset_provider = font_manager.snapshot_provider();
         let registered_families = font_manager.registered_family_names();
         let mut collection = FontCollection::new();
@@ -397,7 +397,7 @@ impl NativeTextEngine {
     }
 
     /// Build using the platform's system fonts only. Useful when no
-    /// `NativeFontManager` is needed.
+    /// `FontManager` is needed.
     pub fn with_system_fonts() -> Self {
         let mut collection = FontCollection::new();
         collection.set_default_font_manager(FontMgr::new(), None);
@@ -410,14 +410,14 @@ impl NativeTextEngine {
     }
 
     /// Lay out `text` against `style`, wrapping at `max_width`. Returns
-    /// a `NativeTextLayout` that can be measured or drawn via
-    /// `NativeCanvas::draw_text_layout`.
+    /// a `TextLayout` that can be measured or drawn via
+    /// `Canvas::draw_text_layout`.
     pub fn layout_text(
         &self,
         text: &str,
         style: &TextStyle,
         max_width: f32,
-    ) -> NativeTextLayout {
+    ) -> TextLayout {
         let collection = self.collection_for(style);
         let sk_text_style = build_text_style(style);
         let paragraph_style = build_paragraph_style(style, &sk_text_style);
@@ -426,7 +426,7 @@ impl NativeTextEngine {
         builder.add_text(text);
         let mut paragraph = builder.build();
         paragraph.layout(max_width);
-        NativeTextLayout {
+        TextLayout {
             paragraph,
             max_width,
         }
@@ -446,7 +446,7 @@ impl NativeTextEngine {
         spans: &[RichTextSpan],
         base_style: &TextStyle,
         max_width: f32,
-    ) -> NativeTextLayout {
+    ) -> TextLayout {
         let collection = self.collection_for(base_style);
         let base_sk_style = build_text_style(base_style);
         let paragraph_style = build_paragraph_style(base_style, &base_sk_style);
@@ -460,7 +460,7 @@ impl NativeTextEngine {
         }
         let mut paragraph = builder.build();
         paragraph.layout(max_width);
-        NativeTextLayout {
+        TextLayout {
             paragraph,
             max_width,
         }
@@ -577,15 +577,15 @@ impl NativeTextEngine {
     }
 }
 
-/// Result of `NativeTextEngine::layout_text`. Owns the laid-out
+/// Result of `TextEngine::layout_text`. Owns the laid-out
 /// paragraph; metrics queries are cheap and `draw_text_layout` paints
 /// the same paragraph onto a canvas.
-pub struct NativeTextLayout {
+pub struct TextLayout {
     pub(crate) paragraph: SkParagraph,
     max_width: f32,
 }
 
-impl NativeTextLayout {
+impl TextLayout {
     /// Measured width of the longest laid-out line, after wrapping.
     /// Matches the `TextLayout.width` semantics in the TypeScript
     /// renderer: the width that the laid-out content actually occupies,
@@ -620,12 +620,12 @@ impl NativeTextLayout {
 
     /// Per-line metrics for the laid-out paragraph. The vector is
     /// indexed by line number and ordered top-to-bottom.
-    pub fn line_metrics(&self) -> Vec<NativeLineMetrics> {
+    pub fn line_metrics(&self) -> Vec<LineMetrics> {
         self.paragraph
             .get_line_metrics()
             .iter()
             .enumerate()
-            .map(|(i, m)| NativeLineMetrics {
+            .map(|(i, m)| LineMetrics {
                 line_number: i,
                 start_index: m.start_index,
                 end_index: m.end_index,

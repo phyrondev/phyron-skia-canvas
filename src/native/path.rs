@@ -1,6 +1,6 @@
 use skia_safe::{Path as SkPath, PathFillType, utils::parse_path};
 
-use crate::native::error::NativeError;
+use crate::native::error::Error;
 
 /// Path winding rule. Matches SVG / Canvas semantics:
 /// - `NonZero` (Skia's `Winding`) fills any region whose net winding is
@@ -25,17 +25,14 @@ impl FillRule {
 /// Vector path. Currently only constructible from SVG path data (the same
 /// `d=""` syntax used by `<path>` elements and Studio's `ShapeItem.pathData`).
 /// More constructors land alongside their use cases.
-pub struct NativePath {
+pub struct Path {
     pub(crate) inner: SkPath,
 }
 
-impl NativePath {
-    pub fn from_svg(
-        data: &str,
-        fill_rule: FillRule,
-    ) -> Result<Self, NativeError> {
+impl Path {
+    pub fn from_svg(data: &str, fill_rule: FillRule) -> Result<Self, Error> {
         let mut path = parse_path::from_svg(data).ok_or_else(|| {
-            NativeError::InvalidSvgPath {
+            Error::InvalidSvgPath {
                 reason: format!("could not parse SVG path data: {data:?}"),
             }
         })?;
@@ -57,7 +54,7 @@ impl NativePath {
     }
 }
 
-impl Clone for NativePath {
+impl Clone for Path {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -65,9 +62,9 @@ impl Clone for NativePath {
     }
 }
 
-impl std::fmt::Debug for NativePath {
+impl std::fmt::Debug for Path {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NativePath")
+        f.debug_struct("Path")
             .field("fill_rule", &self.fill_rule())
             .finish()
     }

@@ -4,32 +4,31 @@ use skia_safe::{
 };
 
 use crate::native::{
-    error::NativeError,
+    error::Error,
     pixels::{PixelColorSpace, PixelFormat},
 };
 
 #[derive(Debug, Clone)]
-pub struct NativeImage {
+pub struct Image {
     pub(crate) inner: SkImage,
 }
 
-impl NativeImage {
-    /// Decode an encoded image (PNG, JPEG, WebP, etc.) into a `NativeImage`.
+impl Image {
+    /// Decode an encoded image (PNG, JPEG, WebP, etc.) into a `Image`.
     /// For raw decoded video frames (rsmpeg) or generated pixel buffers
     /// (Citra), prefer `from_pixels` -- it skips the encode/decode round
     /// trip.
-    pub fn from_encoded(bytes: &[u8]) -> Result<Self, NativeError> {
+    pub fn from_encoded(bytes: &[u8]) -> Result<Self, Error> {
         let data = Data::new_copy(bytes);
-        let image = SkImage::from_encoded(data).ok_or_else(|| {
-            NativeError::DecodeImage {
+        let image =
+            SkImage::from_encoded(data).ok_or_else(|| Error::DecodeImage {
                 reason: "skia could not decode the encoded image bytes"
                     .to_string(),
-            }
-        })?;
+            })?;
         Ok(Self { inner: image })
     }
 
-    /// Build a `NativeImage` directly from a raw pixel buffer. The intended
+    /// Build a `Image` directly from a raw pixel buffer. The intended
     /// bridge for rsmpeg-decoded video frames and Citra-generated images:
     /// no PNG/JPEG/WebP encode round trip is required.
     ///
@@ -55,9 +54,9 @@ impl NativeImage {
         stride: usize,
         pixel_format: PixelFormat,
         color_space: PixelColorSpace,
-    ) -> Result<Self, NativeError> {
+    ) -> Result<Self, Error> {
         if width == 0 || height == 0 {
-            return Err(NativeError::InvalidDimensions {
+            return Err(Error::InvalidDimensions {
                 width: width as f32,
                 height: height as f32,
             });
@@ -65,14 +64,14 @@ impl NativeImage {
         let bpp = pixel_format.bytes_per_pixel();
         let min_stride = (width as usize) * bpp;
         if stride < min_stride {
-            return Err(NativeError::InvalidStride {
+            return Err(Error::InvalidStride {
                 expected: min_stride,
                 actual: stride,
             });
         }
         let expected_len = stride * (height as usize);
         if bytes.len() != expected_len {
-            return Err(NativeError::InvalidByteLength {
+            return Err(Error::InvalidByteLength {
                 expected: expected_len,
                 actual: bytes.len(),
             });
@@ -90,7 +89,7 @@ impl NativeImage {
 
         let data = Data::new_copy(bytes);
         let image = images::raster_from_data(&info, data, stride).ok_or_else(|| {
-            NativeError::DecodeImage {
+            Error::DecodeImage {
                 reason: format!(
                     "skia could not build image from raw pixels ({pixel_format:?} {color_space:?})"
                 ),
@@ -99,7 +98,7 @@ impl NativeImage {
         Ok(Self { inner: image })
     }
 
-    /// Rasterize an SVG XML document into a `NativeImage` of the given
+    /// Rasterize an SVG XML document into a `Image` of the given
     /// dimensions. `from_encoded` does not decode SVG XML (it handles
     /// raster codecs only); this method is the explicit SVG bridge.
     ///
@@ -114,16 +113,16 @@ impl NativeImage {
         svg: &str,
         width: u32,
         height: u32,
-    ) -> Result<Self, NativeError> {
+    ) -> Result<Self, Error> {
         if width == 0 || height == 0 {
-            return Err(NativeError::InvalidDimensions {
+            return Err(Error::InvalidDimensions {
                 width: width as f32,
                 height: height as f32,
             });
         }
         let font_mgr = FontMgr::new();
         let mut dom = skia_safe::svg::Dom::from_bytes(svg.as_bytes(), font_mgr)
-            .map_err(|_| NativeError::DecodeImage {
+            .map_err(|_| Error::DecodeImage {
                 reason: "could not parse SVG XML".to_string(),
             })?;
         dom.set_container_size(Size::new(width as f32, height as f32));
@@ -136,7 +135,7 @@ impl NativeImage {
         );
         let mut surface =
             surfaces::raster(&info, None, None).ok_or_else(|| {
-                NativeError::DecodeImage {
+                Error::DecodeImage {
                     reason: format!(
                         "could not allocate {width}x{height} SVG render surface"
                     ),

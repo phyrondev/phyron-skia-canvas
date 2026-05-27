@@ -9,12 +9,11 @@
 //!
 //! ```no_run
 //! use skia_canvas::native::{
-//!     LinearColorSpace, NativeBackend, NativePaint, Rect, RgbaLinear,
-//!     SurfaceOptions,
+//!     Backend, LinearColorSpace, Paint, Rect, RgbaLinear, SurfaceOptions,
 //! };
 //!
-//! # fn run() -> Result<(), skia_canvas::native::NativeError> {
-//! let backend = NativeBackend::new();
+//! # fn run() -> Result<(), skia_canvas::native::Error> {
+//! let backend = Backend::new();
 //! let mut surface = backend.create_surface(
 //!     1920,
 //!     1080,
@@ -28,7 +27,7 @@
 //!     canvas.clear(RgbaLinear::new_premultiplied(0.0, 0.0, 0.0, 0.0));
 //!     canvas.draw_rect(
 //!         Rect::from_xywh(100.0, 100.0, 200.0, 100.0),
-//!         &NativePaint::fill(RgbaLinear::opaque(1.0, 0.0, 0.0)),
+//!         &Paint::fill(RgbaLinear::opaque(1.0, 0.0, 0.0)),
 //!     );
 //! });
 //!

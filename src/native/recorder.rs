@@ -1,6 +1,6 @@
 use skia_safe::{
     BlendMode as SkBlendMode, Canvas as SkCanvas, ColorSpace as SkColorSpace,
-    ColorType, ImageInfo, Matrix, Paint, Point as SkPoint, RRect,
+    ColorType, ImageInfo, Matrix, Paint as SkPaint, Point as SkPoint, RRect,
     Rect as SkRect,
     canvas::{SaveLayerRec, SrcRectConstraint},
 };
@@ -13,24 +13,24 @@ use crate::{
             RgbaLinear, linear_srgb_color_space,
             rgba_linear_to_unpremul_color4f,
         },
-        error::NativeError,
-        filter::NativeImageFilter,
-        geometry::{NativeAffine, Point, Rect},
-        image::NativeImage,
-        paint::NativePaint,
-        path::NativePath,
+        error::Error,
+        filter::ImageFilter,
+        geometry::{Affine, Point, Rect},
+        image::Image,
+        paint::Paint,
+        path::Path,
         pixels::{RawFrame, RawFrameOptions, SamplingMode, SurfaceOptions},
-        surface::NativeSurface,
-        text::{NativeTextLayout, TextAlign, TextBoxOptions, VerticalAlign},
+        surface::Surface,
+        text::{TextAlign, TextBoxOptions, TextLayout, VerticalAlign},
     },
 };
 
-pub struct NativeRecorder {
+pub struct Recorder {
     recorder: PageRecorder,
     bounds: Rect,
 }
 
-pub struct NativeCanvas<'a> {
+pub struct Canvas<'a> {
     canvas: &'a SkCanvas,
     /// The destination surface's working color space. `RgbaLinear`
     /// values handed to canvas methods are interpreted in this space:
@@ -40,28 +40,28 @@ pub struct NativeCanvas<'a> {
     working_color_space: SkColorSpace,
 }
 
-/// Options for [`NativeCanvas::save_layer_with`], mirroring CanvasKit's
+/// Options for [`Canvas::save_layer_with`], mirroring CanvasKit's
 /// `Canvas.saveLayer(paint?, bounds?, backdrop?, flags?)`.
 #[derive(Default)]
 pub struct SaveLayerOptions<'a> {
     /// Paint whose alpha, blend mode, and filters composite the layer
     /// onto the destination on `restore()`. `None` is a straight copy.
-    pub paint: Option<&'a NativePaint>,
+    pub paint: Option<&'a Paint>,
     /// Layer bounds hint. `None` uses the current clip bounds.
     pub bounds: Option<Rect>,
     /// Image filter applied to the existing backdrop before the layer
     /// draws over it (blur-behind / frosted glass). `None` = no backdrop
     /// filter.
-    pub backdrop: Option<&'a NativeImageFilter>,
+    pub backdrop: Option<&'a ImageFilter>,
 }
 
-impl NativeRecorder {
-    pub fn new(bounds: Rect) -> Result<Self, NativeError> {
+impl Recorder {
+    pub fn new(bounds: Rect) -> Result<Self, Error> {
         if bounds.is_empty()
             || !bounds.width().is_finite()
             || !bounds.height().is_finite()
         {
-            return Err(NativeError::InvalidDimensions {
+            return Err(Error::InvalidDimensions {
                 width: bounds.width(),
                 height: bounds.height(),
             });
@@ -71,14 +71,14 @@ impl NativeRecorder {
         Ok(Self { recorder, bounds })
     }
 
-    pub fn record(&mut self, f: impl FnOnce(&mut NativeCanvas<'_>)) {
+    pub fn record(&mut self, f: impl FnOnce(&mut Canvas<'_>)) {
         // Recorder records into a picture whose working space is fixed
         // at render time; default the canvas to linear sRGB for color
-        // tagging. Surface-driven callers (`NativeSurface::with_canvas`)
+        // tagging. Surface-driven callers (`Surface::with_canvas`)
         // carry the surface's working space through.
         let working_cs = linear_srgb_color_space();
         self.recorder.append(|skia_canvas| {
-            let mut canvas = NativeCanvas::new(skia_canvas, working_cs.clone());
+            let mut canvas = Canvas::new(skia_canvas, working_cs.clone());
             f(&mut canvas);
         });
     }
@@ -87,7 +87,7 @@ impl NativeRecorder {
         &mut self,
         surface_options: SurfaceOptions,
         frame_options: RawFrameOptions,
-    ) -> Result<RawFrame, NativeError> {
+    ) -> Result<RawFrame, Error> {
         let surface_color_space =
             surface_options.color_space.to_skia_color_space()?;
         let dst_color_type = frame_options.pixel_format.to_skia_color_type()?;
@@ -105,7 +105,7 @@ impl NativeRecorder {
         let scaled_w = (self.bounds.width() * density).floor().max(0.0) as i32;
         let scaled_h = (self.bounds.height() * density).floor().max(0.0) as i32;
         if scaled_w <= 0 || scaled_h <= 0 {
-            return Err(NativeError::InvalidDimensions {
+            return Err(Error::InvalidDimensions {
                 width: self.bounds.width(),
                 height: self.bounds.height(),
             });
@@ -130,7 +130,7 @@ impl NativeRecorder {
         let page = self.recorder.get_page();
         let pixels = page
             .render_raw(export_options, dst_info, internal_engine)
-            .map_err(|reason| NativeError::Render { reason })?;
+            .map_err(|reason| Error::Render { reason })?;
 
         let stride =
             (scaled_w as usize) * frame_options.pixel_format.bytes_per_pixel();
@@ -149,12 +149,12 @@ impl NativeRecorder {
     }
 }
 
-impl NativeCanvas<'_> {
+impl Canvas<'_> {
     pub(crate) fn new(
         canvas: &SkCanvas,
         working_color_space: SkColorSpace,
-    ) -> NativeCanvas<'_> {
-        NativeCanvas {
+    ) -> Canvas<'_> {
+        Canvas {
             canvas,
             working_color_space,
         }
@@ -166,7 +166,7 @@ impl NativeCanvas<'_> {
         // sRGB-encoded and gamma-decode it. Build the paint ourselves
         // with the destination's working color space tag and
         // `BlendMode::Src` (what `clear` does internally).
-        let mut paint = Paint::default();
+        let mut paint = SkPaint::default();
         paint.set_color4f(
             rgba_linear_to_unpremul_color4f(color),
             Some(&self.working_color_space),
@@ -198,7 +198,7 @@ impl NativeCanvas<'_> {
 
     /// Concatenate an affine transform onto the current canvas matrix.
     /// `transform` is in `[a, b, c, d, tx, ty]` form (CSS DOMMatrix2DInit).
-    pub fn concat_transform(&mut self, transform: NativeAffine) {
+    pub fn concat_transform(&mut self, transform: Affine) {
         let matrix = Matrix::from_affine(&[
             transform.a,
             transform.b,
@@ -215,7 +215,7 @@ impl NativeCanvas<'_> {
     /// destination using `paint`'s alpha, blend mode, and (eventually)
     /// filters. Pass `None` for a transparent isolation buffer with default
     /// composition.
-    pub fn save_layer(&mut self, paint: Option<&NativePaint>) {
+    pub fn save_layer(&mut self, paint: Option<&Paint>) {
         if let Some(p) = paint {
             let sk_paint = p.to_skia_paint(&self.working_color_space);
             let rec = SaveLayerRec::default().paint(&sk_paint);
@@ -266,13 +266,13 @@ impl NativeCanvas<'_> {
 
     /// Intersect the current clip with `path`. The path's fill rule decides
     /// which interior regions are kept.
-    pub fn clip_path(&mut self, path: &NativePath) {
+    pub fn clip_path(&mut self, path: &Path) {
         self.canvas.clip_path(&path.inner, None, true);
     }
 
     /// Fill or stroke `path` according to `paint`. The path's fill rule
     /// (`NonZero` / `EvenOdd`) decides interior coverage on fills.
-    pub fn draw_path(&mut self, path: &NativePath, paint: &NativePaint) {
+    pub fn draw_path(&mut self, path: &Path, paint: &Paint) {
         self.canvas.draw_path(
             &path.inner,
             &paint.to_skia_paint(&self.working_color_space),
@@ -282,7 +282,7 @@ impl NativeCanvas<'_> {
     /// Stroke a line segment from `p1` to `p2` using the paint's stroke
     /// width, cap, dash, and anti-alias state. The paint should be a
     /// stroke-style paint; fill style produces no output.
-    pub fn draw_line(&mut self, p1: Point, p2: Point, paint: &NativePaint) {
+    pub fn draw_line(&mut self, p1: Point, p2: Point, paint: &Paint) {
         self.canvas.draw_line(
             SkPoint::new(p1.x, p1.y),
             SkPoint::new(p2.x, p2.y),
@@ -296,17 +296,17 @@ impl NativeCanvas<'_> {
     /// (strict source rect constraint).
     pub fn draw_image_src(
         &mut self,
-        image: &NativeImage,
+        image: &Image,
         src: Rect,
         dst: Rect,
-        paint: Option<&NativePaint>,
+        paint: Option<&Paint>,
         sampling: SamplingMode,
     ) {
         let src_rect = to_sk_rect(src);
         let dst_rect = to_sk_rect(dst);
         let sk_paint =
             paint.map(|p| p.to_skia_paint(&self.working_color_space));
-        let default_paint = Paint::default();
+        let default_paint = SkPaint::default();
         let p_ref = sk_paint.as_ref().unwrap_or(&default_paint);
         self.canvas.draw_image_rect_with_sampling_options(
             &image.inner,
@@ -323,10 +323,10 @@ impl NativeCanvas<'_> {
     /// because Skia requires mut access for snapshotting.
     pub fn draw_surface(
         &mut self,
-        source: &mut NativeSurface,
+        source: &mut Surface,
         x: f32,
         y: f32,
-        paint: Option<&NativePaint>,
+        paint: Option<&Paint>,
     ) {
         let image = source.snapshot();
         let sk_paint =
@@ -338,7 +338,7 @@ impl NativeCanvas<'_> {
         );
     }
 
-    pub fn draw_rect(&mut self, rect: Rect, paint: &NativePaint) {
+    pub fn draw_rect(&mut self, rect: Rect, paint: &Paint) {
         self.canvas.draw_rect(
             to_sk_rect(rect),
             &paint.to_skia_paint(&self.working_color_space),
@@ -349,44 +349,34 @@ impl NativeCanvas<'_> {
         &mut self,
         rect: Rect,
         radius: f32,
-        paint: &NativePaint,
+        paint: &Paint,
     ) {
         let rrect = RRect::new_rect_xy(to_sk_rect(rect), radius, radius);
         self.canvas
             .draw_rrect(rrect, &paint.to_skia_paint(&self.working_color_space));
     }
 
-    pub fn draw_oval(&mut self, rect: Rect, paint: &NativePaint) {
+    pub fn draw_oval(&mut self, rect: Rect, paint: &Paint) {
         self.canvas.draw_oval(
             to_sk_rect(rect),
             &paint.to_skia_paint(&self.working_color_space),
         );
     }
 
-    pub fn draw_image_rect(
-        &mut self,
-        image: &NativeImage,
-        dst: Rect,
-        opacity: f32,
-    ) {
+    pub fn draw_image_rect(&mut self, image: &Image, dst: Rect, opacity: f32) {
         let dst_rect = to_sk_rect(dst);
-        let mut paint = Paint::default();
+        let mut paint = SkPaint::default();
         paint.set_anti_alias(true);
         paint.set_alpha_f(opacity.clamp(0.0, 1.0));
         self.canvas
             .draw_image_rect(&image.inner, None, dst_rect, &paint);
     }
 
-    /// Paint a `NativeTextLayout` produced by `NativeTextEngine` at
+    /// Paint a `TextLayout` produced by `TextEngine` at
     /// `(x, y)` (the paragraph's top-left). Layout-time alignment from
     /// the `TextStyle` controls horizontal positioning within the
     /// paragraph's max width.
-    pub fn draw_text_layout(
-        &mut self,
-        layout: &NativeTextLayout,
-        x: f32,
-        y: f32,
-    ) {
+    pub fn draw_text_layout(&mut self, layout: &TextLayout, x: f32, y: f32) {
         layout.paragraph.paint(self.canvas, (x, y));
     }
 
@@ -405,7 +395,7 @@ impl NativeCanvas<'_> {
             },
         };
 
-        let mut paint = Paint::default();
+        let mut paint = SkPaint::default();
         let modulated = options.color.with_opacity(options.opacity);
         paint.set_color4f(
             rgba_linear_to_unpremul_color4f(modulated),
