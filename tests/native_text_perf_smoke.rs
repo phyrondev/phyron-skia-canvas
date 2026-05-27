@@ -1,10 +1,7 @@
 use std::time::Instant;
 
 use anyhow::Result;
-use skia_canvas::native::{
-    LinearColorSpace, OutputColorSpace, PixelFormat, RawFrameOptions, Recorder,
-    Rect, RgbaLinear, SurfaceOptions, TextAlign, TextBoxOptions, VerticalAlign,
-};
+use skia_canvas::prelude::*;
 
 const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;

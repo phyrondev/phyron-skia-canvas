@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::native::{
+use crate::{
     backend::RenderEngine,
     color::{LinearColorSpace, OutputColorSpace},
     geometry::Rect,

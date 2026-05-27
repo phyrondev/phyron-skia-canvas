@@ -3,7 +3,7 @@ use skia_safe::{
     PaintCap, PaintStyle as SkPaintStyle, dash_path_effect,
 };
 
-use crate::native::{
+use crate::{
     color::{RgbaLinear, rgba_linear_to_unpremul_color4f},
     filter::{ColorFilter, ImageFilter, MaskFilter},
     shader::Shader,

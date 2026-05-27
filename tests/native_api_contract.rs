@@ -1,11 +1,5 @@
 use anyhow::{Context, Result};
-use skia_canvas::native::{
-    Backend, BlendMode, BlurStyle, EngineKind, Error, FontAxisTag, FontFeature,
-    FontManager, FontVariation, GradientInterpolation, GradientStop, Image,
-    LinearColorSpace, MaskFilter, Paint, PixelFormat, Point, RawFrameOptions,
-    Recorder, Rect, RenderEngine, RgbaLinear, SamplingMode, SaveLayerOptions,
-    Shader, StrutStyle, SurfaceOptions, TextBoxOptions, TextEngine, TextStyle,
-};
+use skia_canvas::prelude::*;
 
 #[test]
 fn native_facade_renders_tight_rgba8_without_importing_skia_safe() -> Result<()>

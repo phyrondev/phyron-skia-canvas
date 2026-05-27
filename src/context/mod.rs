@@ -21,13 +21,15 @@ pub mod api;
 pub mod page;
 
 use crate::{
-    filter::{Filter, SamplingFilter, SamplingQuality},
     font_library::FontLibrary,
     gpu::RenderingEngine,
     gradient::{BoxedCanvasGradient, CanvasGradient},
-    image::ImageData,
+    node::{
+        filter::{Filter, SamplingFilter, SamplingQuality},
+        image::ImageData,
+        shader::BoxedShader,
+    },
     pattern::{BoxedCanvasPattern, CanvasPattern},
-    shader::BoxedShader,
     texture::{BoxedCanvasTexture, CanvasTexture},
     typography::{Baseline, DecorationStyle, FontSpec, Spacing, Typesetter},
     utils::*,

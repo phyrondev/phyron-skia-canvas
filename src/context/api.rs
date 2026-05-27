@@ -12,11 +12,13 @@ use super::{BoxedContext2D, Context2D, Dye, page::ExportOptions};
 use crate::{
     canvas::BoxedCanvas,
     color_filter::BoxedColorFilter,
-    filter::Filter,
-    image::{BoxedImage, Content},
     image_filter::BoxedImageFilter,
     mask_filter::BoxedMaskFilter,
-    path::Path2D,
+    node::{
+        filter::Filter,
+        image::{BoxedImage, Content},
+        path::Path2D,
+    },
     typography::{
         decoration_arg, font_arg, font_features, from_text_align,
         from_text_baseline, from_width, opt_spacing_arg, to_text_align,

@@ -14,10 +14,7 @@ use std::{
     io::{BufWriter, Write},
 };
 
-use skia_canvas::native::{
-    Backend, FillRule, LinearColorSpace, Paint, Path, Rect, RgbaLinear,
-    SurfaceOptions,
-};
+use skia_canvas::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = Backend::new();

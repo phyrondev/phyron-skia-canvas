@@ -4,18 +4,16 @@ use skia_safe::{
 };
 
 use crate::{
+    backend::{EngineKind, engine_kind_from, resolve_engine},
+    color::LinearColorSpace,
     context::page::ExportOptions,
-    native::{
-        backend::{EngineKind, engine_kind_from, resolve_engine},
-        color::LinearColorSpace,
-        error::Error,
-        image::Image,
-        pixels::{
-            ExportedPixels, PixelColorSpace, PixelDepth, PixelExportOptions,
-            SurfaceOptions,
-        },
-        recorder::Canvas,
+    error::Error,
+    image::Image,
+    pixels::{
+        ExportedPixels, PixelColorSpace, PixelDepth, PixelExportOptions,
+        SurfaceOptions,
     },
+    recorder::Canvas,
 };
 
 pub struct Surface {
@@ -93,7 +91,7 @@ impl Surface {
     /// [`RenderEngine::Auto`] this tells callers whether the GPU path
     /// was selected at construction time.
     ///
-    /// [`RenderEngine::Auto`]: crate::native::RenderEngine::Auto
+    /// [`RenderEngine::Auto`]: crate::RenderEngine::Auto
     pub fn engine(&self) -> EngineKind {
         self.engine
     }

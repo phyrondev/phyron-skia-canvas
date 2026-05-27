@@ -3,8 +3,10 @@ use std::fmt;
 use serde_json::Value;
 
 use crate::{
+    error::Error,
     gpu::{RenderingEngine, get_backend_status},
-    native::{error::Error, pixels::SurfaceOptions, surface::Surface},
+    pixels::SurfaceOptions,
+    surface::Surface,
 };
 
 /// Selects the rasterizer that backs a `Surface`.

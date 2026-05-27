@@ -16,7 +16,7 @@ use skia_safe::{
     },
 };
 
-use crate::native::{
+use crate::{
     color::{
         RgbaLinear, linear_srgb_color_space, rgba_linear_to_skia_color,
         rgba_linear_to_unpremul_color4f,

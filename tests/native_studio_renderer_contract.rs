@@ -11,14 +11,7 @@
 //! .*RefCell" src/native
 
 use anyhow::Result;
-use skia_canvas::native::{
-    Affine, Backend, BlendMode, ColorFilter, Error, FillRule, FontManager,
-    GradientInterpolation, GradientStop, Image, ImageFilter, LinearColorSpace,
-    Paint, PaintStyle, Path, PixelColorSpace, PixelDepth, PixelExportOptions,
-    PixelFormat, Point, Rect, RenderEngine, RgbaLinear, RichTextSpan,
-    SamplingMode, Shader, StrokeCap, SurfaceOptions, TextAlign, TextDecoration,
-    TextEngine, TextLayout, TextShadow, TextStyle,
-};
+use skia_canvas::prelude::*;
 
 /// Surface options pinned to the CPU rasterizer. Used by the
 /// pixel-exact contract tests (HDR round-trips, deterministic

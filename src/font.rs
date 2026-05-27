@@ -3,7 +3,7 @@ use std::path::Path;
 use parking_lot::Mutex;
 use skia_safe::{FontMgr, textlayout::TypefaceFontProvider};
 
-use crate::native::error::Error;
+use crate::error::Error;
 
 /// Four-byte OpenType axis tag (e.g. `"wght"`, `"wdth"`, `"opsz"`).
 ///

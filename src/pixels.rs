@@ -3,7 +3,7 @@ use skia_safe::{
     FilterMode, MipmapMode, SamplingOptions,
 };
 
-use crate::native::{
+use crate::{
     backend::RenderEngine,
     color::{LinearColorSpace, OutputColorSpace},
     error::Error,

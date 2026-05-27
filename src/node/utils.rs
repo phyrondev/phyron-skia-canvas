@@ -907,7 +907,7 @@ pub fn points_arg(
 // Image & ImageData
 //
 
-use crate::image::ImageData;
+use crate::node::image::ImageData;
 use neon::types::buffer::TypedArray;
 use skia_safe::{AlphaType, ColorType, ImageInfo};
 
@@ -1155,7 +1155,7 @@ pub fn export_options_arg(
 // Path2D
 //
 
-use crate::path::BoxedPath2D;
+use crate::node::path::BoxedPath2D;
 
 pub fn opt_skpath_arg(cx: &mut FunctionContext, idx: usize) -> Option<Path> {
     if let Some(arg) = cx.argument_opt(idx)
@@ -1191,7 +1191,7 @@ pub fn path2d_arg<'a>(
 // Filters
 //
 
-use crate::filter::{FilterSpec, SamplingQuality};
+use crate::node::filter::{FilterSpec, SamplingQuality};
 
 pub fn filter_arg(
     cx: &mut FunctionContext,

@@ -3,7 +3,7 @@ use skia_safe::{
     named_transfer_fn,
 };
 
-use crate::native::error::Error;
+use crate::error::Error;
 
 /// Linear-light sRGB color space tag for `Color4f` handoffs to Skia.
 ///

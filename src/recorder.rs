@@ -6,23 +6,20 @@ use skia_safe::{
 };
 
 use crate::{
-    context::page::{ExportOptions, PageRecorder},
-    native::{
-        backend::resolve_engine,
-        color::{
-            RgbaLinear, linear_srgb_color_space,
-            rgba_linear_to_unpremul_color4f,
-        },
-        error::Error,
-        filter::ImageFilter,
-        geometry::{Affine, Point, Rect},
-        image::Image,
-        paint::Paint,
-        path::Path,
-        pixels::{RawFrame, RawFrameOptions, SamplingMode, SurfaceOptions},
-        surface::Surface,
-        text::{TextAlign, TextBoxOptions, TextLayout, VerticalAlign},
+    backend::resolve_engine,
+    color::{
+        RgbaLinear, linear_srgb_color_space, rgba_linear_to_unpremul_color4f,
     },
+    context::page::{ExportOptions, PageRecorder},
+    error::Error,
+    filter::ImageFilter,
+    geometry::{Affine, Point, Rect},
+    image::Image,
+    paint::Paint,
+    path::Path,
+    pixels::{RawFrame, RawFrameOptions, SamplingMode, SurfaceOptions},
+    surface::Surface,
+    text::{TextAlign, TextBoxOptions, TextLayout, VerticalAlign},
 };
 
 pub struct Recorder {

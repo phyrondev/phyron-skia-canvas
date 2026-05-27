@@ -18,12 +18,7 @@
 //! (raw frames go through `Image::from_pixels`).
 
 use anyhow::Result;
-use skia_canvas::native::{
-    Backend, BlendMode, Canvas, ColorFilter, Error, FillRule, FontManager,
-    Image, ImageFilter, Paint, Path, PixelColorSpace, PixelFormat, Point, Rect,
-    RgbaLinear, SamplingMode, Shader, Surface, SurfaceOptions, TextAlign,
-    TextEngine, TextLayout, TextStyle,
-};
+use skia_canvas::prelude::*;
 
 /// Minimal renderer adapter that mirrors the surface area of the
 /// TypeScript `DrawBackend` (per
@@ -174,17 +169,12 @@ impl RendererAdapter {
     ) -> Result<Shader, Error> {
         let stops: Vec<_> = stops
             .iter()
-            .map(|(pos, color)| skia_canvas::native::GradientStop {
+            .map(|(pos, color)| GradientStop {
                 position: *pos,
                 color: *color,
             })
             .collect();
-        Shader::linear_gradient(
-            start,
-            end,
-            &stops,
-            skia_canvas::native::GradientInterpolation::Srgb,
-        )
+        Shader::linear_gradient(start, end, &stops, GradientInterpolation::Srgb)
     }
 
     /// `DrawBackend.composeFromOffscreen` -- snapshot the offscreen and

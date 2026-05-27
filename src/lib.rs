@@ -1,18 +1,17 @@
 //! GPU-accelerated, multi-threaded HTML Canvas-compatible 2D rendering for
 //! Rust and Node, powered by [Skia].
 //!
-//! # Rust consumers: use [`native`]
+//! # Rust consumers: use the [`prelude`]
 //!
-//! [`native`] is the stable, supported Rust API. Public signatures in that
-//! module never expose `skia_safe` or `neon` types -- a compile-time pin
-//! verifies this.
+//! The crate-root modules are the stable, supported Rust API; the
+//! [`prelude`] re-exports them all. Public signatures never expose
+//! `skia_safe` or `neon` types -- a compile-time pin verifies this. The
+//! Node/Neon binding lives under the internal `node` module.
 //!
 //! ```no_run
-//! use skia_canvas::native::{
-//!     Backend, LinearColorSpace, Paint, Rect, RgbaLinear, SurfaceOptions,
-//! };
+//! use skia_canvas::prelude::*;
 //!
-//! # fn run() -> Result<(), skia_canvas::native::Error> {
+//! # fn run() -> Result<(), skia_canvas::error::Error> {
 //! let backend = Backend::new();
 //! let mut surface = backend.create_surface(
 //!     1920,
@@ -70,50 +69,60 @@
 #[cfg(feature = "node-addon")]
 use neon::prelude::*;
 
-// Modules under the crate root are the Neon/JS binding surface. They
-// remain `pub` so the Node addon entry point below can register them,
-// and `#[doc(hidden)]` so docs.rs surfaces only the `native` facade
-// for Rust consumers. Their public signatures intentionally leak
-// `skia_safe` / `neon` types and are NOT a stable Rust API.
-#[doc(hidden)]
-pub mod canvas;
-#[doc(hidden)]
-pub mod color_filter;
-#[doc(hidden)]
-pub mod context;
-#[doc(hidden)]
+// The public Rust API. Each module sits at the crate root; `prelude`
+// re-exports their contents so `use skia_canvas::prelude::*;` needs no
+// module prefixes. Public signatures never expose `skia_safe` or `neon`
+// types -- the Node/Neon binding lives under the internal `node` module.
+pub mod backend;
+pub mod color;
+pub mod error;
 pub mod filter;
-#[doc(hidden)]
-pub mod font_library;
-#[doc(hidden)]
-pub mod gpu;
-#[doc(hidden)]
-pub mod gradient;
-#[cfg(feature = "window")]
-#[doc(hidden)]
-pub mod gui;
-#[doc(hidden)]
+pub mod font;
+pub mod geometry;
 pub mod image;
-#[doc(hidden)]
-pub mod image_filter;
-#[doc(hidden)]
-pub mod mask_filter;
-#[doc(hidden)]
-pub mod paragraph;
-#[doc(hidden)]
+pub mod paint;
 pub mod path;
-#[doc(hidden)]
-pub mod pattern;
-#[doc(hidden)]
+pub mod pixels;
+pub mod recorder;
 pub mod shader;
-#[doc(hidden)]
-pub mod texture;
-#[doc(hidden)]
-pub mod typography;
-#[doc(hidden)]
-pub mod utils;
+pub mod surface;
+pub mod text;
 
-pub mod native;
+/// Glob-importable re-export of the whole public API:
+/// `use skia_canvas::prelude::*;`.
+pub mod prelude {
+    pub use crate::{
+        backend::*, color::*, error::*, filter::*, font::*, geometry::*,
+        image::*, paint::*, path::*, pixels::*, recorder::*, shader::*,
+        surface::*, text::*,
+    };
+}
+
+// Shared internal infrastructure (not part of the public API).
+pub(crate) mod context;
+pub(crate) mod gpu;
+
+/// winit-backed windowing, behind the `window` feature.
+#[cfg(feature = "window")]
+pub mod gui;
+
+// Node.js / Neon binding -- internal; intentionally leaks `skia_safe` /
+// `neon` types, so it is `pub(crate)` and never part of the public API.
+// `dead_code` is allowed across the subtree: many binding methods exist
+// for JS-surface symmetry and aren't all reachable from Rust (and `pub`
+// no longer keeps them "live" now that the module is crate-private).
+#[allow(dead_code)]
+pub(crate) mod node;
+
+// Surface the non-colliding binding modules at the crate root so the
+// binding code keeps using `crate::gradient`, `crate::utils`, etc. The
+// names that collide with a public root module (filter/image/path/shader)
+// belong to the public API; the binding refers to those via `crate::node`.
+#[allow(unused_imports)]
+pub(crate) use node::{
+    canvas, color_filter, font_library, gradient, image_filter, mask_filter,
+    paragraph, pattern, texture, typography, utils,
+};
 
 #[cfg(feature = "node-addon")]
 use context::api as ctx;
@@ -142,46 +151,49 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
 
     // -- Image -------------------------------------------------------------------------------------
 
-    cx.export_function("Image_new", image::new)?;
-    cx.export_function("Image_get_src", image::get_src)?;
-    cx.export_function("Image_set_src", image::set_src)?;
-    cx.export_function("Image_set_data", image::set_data)?;
-    cx.export_function("Image_get_width", image::get_width)?;
-    cx.export_function("Image_get_height", image::get_height)?;
-    cx.export_function("Image_get_complete", image::get_complete)?;
-    cx.export_function("Image_pixels", image::pixels)?;
+    cx.export_function("Image_new", node::image::new)?;
+    cx.export_function("Image_get_src", node::image::get_src)?;
+    cx.export_function("Image_set_src", node::image::set_src)?;
+    cx.export_function("Image_set_data", node::image::set_data)?;
+    cx.export_function("Image_get_width", node::image::get_width)?;
+    cx.export_function("Image_get_height", node::image::get_height)?;
+    cx.export_function("Image_get_complete", node::image::get_complete)?;
+    cx.export_function("Image_pixels", node::image::pixels)?;
 
     // -- Path2D ------------------------------------------------------------------------------------
 
-    cx.export_function("Path2D_new", path::new)?;
-    cx.export_function("Path2D_from_path", path::from_path)?;
-    cx.export_function("Path2D_from_svg", path::from_svg)?;
-    cx.export_function("Path2D_addPath", path::addPath)?;
-    cx.export_function("Path2D_closePath", path::closePath)?;
-    cx.export_function("Path2D_moveTo", path::moveTo)?;
-    cx.export_function("Path2D_lineTo", path::lineTo)?;
-    cx.export_function("Path2D_bezierCurveTo", path::bezierCurveTo)?;
-    cx.export_function("Path2D_quadraticCurveTo", path::quadraticCurveTo)?;
-    cx.export_function("Path2D_conicCurveTo", path::conicCurveTo)?;
-    cx.export_function("Path2D_arc", path::arc)?;
-    cx.export_function("Path2D_arcTo", path::arcTo)?;
-    cx.export_function("Path2D_ellipse", path::ellipse)?;
-    cx.export_function("Path2D_rect", path::rect)?;
-    cx.export_function("Path2D_roundRect", path::roundRect)?;
-    cx.export_function("Path2D_op", path::op)?;
-    cx.export_function("Path2D_interpolate", path::interpolate)?;
-    cx.export_function("Path2D_simplify", path::simplify)?;
-    cx.export_function("Path2D_unwind", path::unwind)?;
-    cx.export_function("Path2D_round", path::round)?;
-    cx.export_function("Path2D_trim", path::trim)?;
-    cx.export_function("Path2D_jitter", path::jitter)?;
-    cx.export_function("Path2D_offset", path::offset)?;
-    cx.export_function("Path2D_transform", path::transform)?;
-    cx.export_function("Path2D_bounds", path::bounds)?;
-    cx.export_function("Path2D_contains", path::contains)?;
-    cx.export_function("Path2D_edges", path::edges)?;
-    cx.export_function("Path2D_get_d", path::get_d)?;
-    cx.export_function("Path2D_set_d", path::set_d)?;
+    cx.export_function("Path2D_new", node::path::new)?;
+    cx.export_function("Path2D_from_path", node::path::from_path)?;
+    cx.export_function("Path2D_from_svg", node::path::from_svg)?;
+    cx.export_function("Path2D_addPath", node::path::addPath)?;
+    cx.export_function("Path2D_closePath", node::path::closePath)?;
+    cx.export_function("Path2D_moveTo", node::path::moveTo)?;
+    cx.export_function("Path2D_lineTo", node::path::lineTo)?;
+    cx.export_function("Path2D_bezierCurveTo", node::path::bezierCurveTo)?;
+    cx.export_function(
+        "Path2D_quadraticCurveTo",
+        node::path::quadraticCurveTo,
+    )?;
+    cx.export_function("Path2D_conicCurveTo", node::path::conicCurveTo)?;
+    cx.export_function("Path2D_arc", node::path::arc)?;
+    cx.export_function("Path2D_arcTo", node::path::arcTo)?;
+    cx.export_function("Path2D_ellipse", node::path::ellipse)?;
+    cx.export_function("Path2D_rect", node::path::rect)?;
+    cx.export_function("Path2D_roundRect", node::path::roundRect)?;
+    cx.export_function("Path2D_op", node::path::op)?;
+    cx.export_function("Path2D_interpolate", node::path::interpolate)?;
+    cx.export_function("Path2D_simplify", node::path::simplify)?;
+    cx.export_function("Path2D_unwind", node::path::unwind)?;
+    cx.export_function("Path2D_round", node::path::round)?;
+    cx.export_function("Path2D_trim", node::path::trim)?;
+    cx.export_function("Path2D_jitter", node::path::jitter)?;
+    cx.export_function("Path2D_offset", node::path::offset)?;
+    cx.export_function("Path2D_transform", node::path::transform)?;
+    cx.export_function("Path2D_bounds", node::path::bounds)?;
+    cx.export_function("Path2D_contains", node::path::contains)?;
+    cx.export_function("Path2D_edges", node::path::edges)?;
+    cx.export_function("Path2D_get_d", node::path::get_d)?;
+    cx.export_function("Path2D_set_d", node::path::set_d)?;
 
     // -- CanvasGradient
     // ----------------------------------------------------------------------------
@@ -341,9 +353,12 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     // -- Shader
     // --------------------------------------------------------------------
 
-    cx.export_function("Shader_makeFractalNoise", shader::makeFractalNoise)?;
-    cx.export_function("Shader_makeTurbulence", shader::makeTurbulence)?;
-    cx.export_function("Shader_delete", shader::delete)?;
+    cx.export_function(
+        "Shader_makeFractalNoise",
+        node::shader::makeFractalNoise,
+    )?;
+    cx.export_function("Shader_makeTurbulence", node::shader::makeTurbulence)?;
+    cx.export_function("Shader_delete", node::shader::delete)?;
 
     // -- FontLibrary
     // -------------------------------------------------------------------------------
