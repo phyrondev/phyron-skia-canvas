@@ -1,5 +1,6 @@
 use skia_safe::{
-    ColorFilter as SkColorFilter, ImageFilter as SkImageFilter, color_filters,
+    BlurStyle as SkBlurStyle, ColorFilter as SkColorFilter,
+    ImageFilter as SkImageFilter, MaskFilter as SkMaskFilter, color_filters,
     image_filters, luma_color_filter,
 };
 
@@ -34,6 +35,65 @@ pub struct NativeColorFilter {
 impl std::fmt::Debug for NativeColorFilter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NativeColorFilter").finish_non_exhaustive()
+    }
+}
+
+/// Coverage-mask blur style. Mirrors CanvasKit's `BlurStyle`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum BlurStyle {
+    /// Blur both inside and outside the geometry (the usual soft blur).
+    #[default]
+    Normal,
+    /// Solid interior with a blurred exterior (glow that keeps the shape).
+    Solid,
+    /// Blur only outside the geometry (outline / halo).
+    Outer,
+    /// Blur only inside the geometry (inner shadow / feathered fill).
+    Inner,
+}
+
+impl BlurStyle {
+    fn to_skia(self) -> SkBlurStyle {
+        match self {
+            Self::Normal => SkBlurStyle::Normal,
+            Self::Solid => SkBlurStyle::Solid,
+            Self::Outer => SkBlurStyle::Outer,
+            Self::Inner => SkBlurStyle::Inner,
+        }
+    }
+}
+
+/// Coverage-mask filter applied before rasterization. Unlike a plain
+/// image-filter blur, the [`BlurStyle`] variants give glows, feathered
+/// edges, and outline blurs. Composed by [`NativePaint`]. Mirrors
+/// CanvasKit's `MaskFilter.MakeBlur`.
+///
+/// [`NativePaint`]: crate::native::NativePaint
+#[derive(Clone)]
+pub struct NativeMaskFilter {
+    pub(crate) inner: SkMaskFilter,
+}
+
+impl std::fmt::Debug for NativeMaskFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NativeMaskFilter").finish_non_exhaustive()
+    }
+}
+
+impl NativeMaskFilter {
+    /// Gaussian coverage blur. `sigma` is the blur standard deviation in
+    /// pixels. `respect_ctm` scales the blur with the canvas transform
+    /// (zoom / keyframed scale); pass `false` to keep it screen-fixed.
+    pub fn blur(
+        style: BlurStyle,
+        sigma: f32,
+        respect_ctm: bool,
+    ) -> Result<Self, NativeError> {
+        SkMaskFilter::blur(style.to_skia(), sigma, respect_ctm)
+            .map(|inner| Self { inner })
+            .ok_or_else(|| NativeError::FilterCreate {
+                reason: format!("mask blur (style={style:?}, sigma={sigma})"),
+            })
     }
 }
 

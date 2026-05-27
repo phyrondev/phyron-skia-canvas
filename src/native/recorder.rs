@@ -14,6 +14,7 @@ use crate::{
             rgba_linear_to_unpremul_color4f,
         },
         error::NativeError,
+        filter::NativeImageFilter,
         geometry::{NativeAffine, Point, Rect},
         image::NativeImage,
         paint::NativePaint,
@@ -37,6 +38,21 @@ pub struct NativeCanvas<'a> {
     /// `RgbaLinear::opaque(1.0, 0.0, 0.0)` as full red in linear
     /// Rec.2020 primaries, not linear sRGB.
     working_color_space: SkColorSpace,
+}
+
+/// Options for [`NativeCanvas::save_layer_with`], mirroring CanvasKit's
+/// `Canvas.saveLayer(paint?, bounds?, backdrop?, flags?)`.
+#[derive(Default)]
+pub struct SaveLayerOptions<'a> {
+    /// Paint whose alpha, blend mode, and filters composite the layer
+    /// onto the destination on `restore()`. `None` is a straight copy.
+    pub paint: Option<&'a NativePaint>,
+    /// Layer bounds hint. `None` uses the current clip bounds.
+    pub bounds: Option<Rect>,
+    /// Image filter applied to the existing backdrop before the layer
+    /// draws over it (blur-behind / frosted glass). `None` = no backdrop
+    /// filter.
+    pub backdrop: Option<&'a NativeImageFilter>,
 }
 
 impl NativeRecorder {
@@ -208,6 +224,31 @@ impl NativeCanvas<'_> {
             let rec = SaveLayerRec::default();
             self.canvas.save_layer(&rec);
         }
+    }
+
+    /// Push an isolated layer with full control over bounds and a
+    /// backdrop filter, mirroring CanvasKit's
+    /// `Canvas.saveLayer(paint?, bounds?, backdrop?)`. The `backdrop`
+    /// image filter is applied to the *existing* destination content
+    /// before the layer draws over it -- the only route to blur-behind /
+    /// frosted-glass effects, which the temp-surface + `draw_canvas`
+    /// emulation of grouped opacity cannot produce.
+    pub fn save_layer_with(&mut self, options: SaveLayerOptions) {
+        let sk_paint = options
+            .paint
+            .map(|p| p.to_skia_paint(&self.working_color_space));
+        let sk_bounds = options.bounds.map(to_sk_rect);
+        let mut rec = SaveLayerRec::default();
+        if let Some(p) = sk_paint.as_ref() {
+            rec = rec.paint(p);
+        }
+        if let Some(b) = sk_bounds.as_ref() {
+            rec = rec.bounds(b);
+        }
+        if let Some(backdrop) = options.backdrop {
+            rec = rec.backdrop(&backdrop.inner);
+        }
+        self.canvas.save_layer(&rec);
     }
 
     /// Intersect the current clip with `rect`. Subsequent draws outside the

@@ -1,9 +1,10 @@
 use anyhow::{Context, Result};
 use skia_canvas::native::{
-    EngineKind, FontAxisTag, FontFeature, FontVariation, LinearColorSpace,
-    NativeBackend, NativeError, NativeFontManager, NativeImage, NativePaint,
-    NativeRecorder, NativeTextEngine, PixelFormat, RawFrameOptions, Rect,
-    RenderEngine, RgbaLinear, StrutStyle, SurfaceOptions, TextBoxOptions,
+    BlendMode, BlurStyle, EngineKind, FontAxisTag, FontFeature, FontVariation,
+    LinearColorSpace, NativeBackend, NativeError, NativeFontManager,
+    NativeImage, NativeMaskFilter, NativePaint, NativeRecorder,
+    NativeTextEngine, PixelFormat, RawFrameOptions, Rect, RenderEngine,
+    RgbaLinear, SaveLayerOptions, StrutStyle, SurfaceOptions, TextBoxOptions,
     TextStyle,
 };
 
@@ -398,6 +399,78 @@ fn text_layout_unresolved_codepoints_empty_for_latin() -> Result<()> {
     assert!(
         layout.unresolved_codepoints().is_empty(),
         "basic Latin should have no unresolved codepoints with fallback on",
+    );
+    Ok(())
+}
+
+#[test]
+fn paint_mask_blur_spreads_ink_beyond_rect() -> Result<()> {
+    let mut recorder =
+        NativeRecorder::new(Rect::from_xywh(0.0, 0.0, 64.0, 64.0))?;
+    let blur = NativeMaskFilter::blur(BlurStyle::Normal, 6.0, true)?;
+    recorder.record(|canvas| {
+        canvas.clear(RgbaLinear::opaque(0.0, 0.0, 0.0));
+        let mut paint = NativePaint::fill(RgbaLinear::opaque(1.0, 1.0, 1.0));
+        paint.set_mask_filter(Some(blur.clone()));
+        canvas.draw_rect(Rect::from_xywh(24.0, 24.0, 16.0, 16.0), &paint);
+    });
+    let frame = recorder
+        .render_raw(SurfaceOptions::default(), RawFrameOptions::default())?;
+    let pixels = frame.pixels();
+    let stride = frame.stride();
+    let lum = |x: usize, y: usize| pixels[y * stride + x * 4] as u32;
+    // The rect spans x 24..40; a point 4px outside the left edge is pure
+    // black without a mask filter. The Normal blur (sigma 6) bleeds the
+    // white fill outward, so it must be lit.
+    assert!(
+        lum(20, 32) > 8,
+        "mask blur halo should light pixels outside the rect; got {}",
+        lum(20, 32),
+    );
+    Ok(())
+}
+
+#[test]
+fn paint_compositing_extras_render() -> Result<()> {
+    // Exercise setDither, the Clear blend mode, and saveLayer-with-bounds
+    // in one pass: clear white, dithered fill, then Clear-erase a hole,
+    // grouped inside an explicit layer. The center must end up non-white.
+    let mut recorder =
+        NativeRecorder::new(Rect::from_xywh(0.0, 0.0, 32.0, 32.0))?;
+    recorder.record(|canvas| {
+        canvas.clear(RgbaLinear::opaque(1.0, 1.0, 1.0));
+        let mut group = NativePaint::fill(RgbaLinear::opaque(0.0, 0.0, 0.0));
+        group.set_alpha(0.5);
+        canvas.save_layer_with(SaveLayerOptions {
+            paint: Some(&group),
+            bounds: Some(Rect::from_xywh(0.0, 0.0, 32.0, 32.0)),
+            backdrop: None,
+        });
+        let mut fill = NativePaint::fill(RgbaLinear::opaque(0.2, 0.4, 0.8));
+        fill.set_dither(true);
+        canvas.draw_rect(Rect::from_xywh(0.0, 0.0, 32.0, 32.0), &fill);
+        let mut eraser = NativePaint::fill(RgbaLinear::opaque(0.0, 0.0, 0.0));
+        eraser.set_blend_mode(BlendMode::Clear);
+        canvas.draw_rect(Rect::from_xywh(8.0, 8.0, 16.0, 16.0), &eraser);
+        canvas.restore();
+    });
+    let frame = recorder
+        .render_raw(SurfaceOptions::default(), RawFrameOptions::default())?;
+    let px = frame.pixels();
+    let stride = frame.stride();
+    // A corner sits under the dithered fill (not the erased hole). The
+    // fill composited through the 0.5-alpha layer must leave it tinted,
+    // not the original white -- proving setDither + saveLayer_with ran.
+    let corner = &px[2 * stride + 2 * 4..2 * stride + 2 * 4 + 4];
+    assert!(
+        corner[0] < 245,
+        "0.5-alpha layer fill should tint the corner off-white; got {corner:?}",
+    );
+    // The Clear-erased hole exposes the white backdrop on restore.
+    let center = &px[16 * stride + 16 * 4..16 * stride + 16 * 4 + 4];
+    assert!(
+        center[0] > 245 && center[1] > 245 && center[2] > 245,
+        "Clear inside the layer should expose the white backdrop; got {center:?}",
     );
     Ok(())
 }

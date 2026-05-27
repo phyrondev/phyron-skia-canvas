@@ -5,7 +5,7 @@ use skia_safe::{
 
 use crate::native::{
     color::{RgbaLinear, rgba_linear_to_unpremul_color4f},
-    filter::{NativeColorFilter, NativeImageFilter},
+    filter::{NativeColorFilter, NativeImageFilter, NativeMaskFilter},
     shader::NativeShader,
 };
 
@@ -61,6 +61,16 @@ pub enum BlendMode {
     Color,
     Luminosity,
     PlusLighter,
+    /// `R = 0` -- clears the destination within the draw. CanvasKit
+    /// `BlendMode.Clear`; absent from the CSS `globalCompositeOperation`
+    /// set.
+    Clear,
+    /// `R = S * D` per channel. CanvasKit `BlendMode.Modulate` (not the
+    /// same as `Multiply`, which composites over the backdrop).
+    Modulate,
+    /// `R = D` -- keeps the destination, ignores the source. CanvasKit
+    /// `BlendMode.Dst`.
+    Destination,
 }
 
 impl BlendMode {
@@ -94,6 +104,9 @@ impl BlendMode {
             // Skia exposes the additive mode as `SkBlendMode::Plus`; this is
             // the same R = a + b operation Canvas calls `plus-lighter`.
             Self::PlusLighter => SkBlendMode::Plus,
+            Self::Clear => SkBlendMode::Clear,
+            Self::Modulate => SkBlendMode::Modulate,
+            Self::Destination => SkBlendMode::Dst,
         }
     }
 }
@@ -115,6 +128,12 @@ pub struct NativePaint {
     pub shader: Option<NativeShader>,
     pub image_filter: Option<NativeImageFilter>,
     pub color_filter: Option<NativeColorFilter>,
+    /// Coverage-mask filter (styled blur). Applied before rasterization
+    /// for glows, feathered edges, and outline blurs.
+    pub mask_filter: Option<NativeMaskFilter>,
+    /// Dither the paint to break up banding in gradients and dark
+    /// frames on 8-bit surfaces. Mirrors CanvasKit's `Paint.setDither`.
+    pub dither: bool,
 }
 
 impl Default for NativePaint {
@@ -131,6 +150,8 @@ impl Default for NativePaint {
             shader: None,
             image_filter: None,
             color_filter: None,
+            mask_filter: None,
+            dither: false,
         }
     }
 }
@@ -219,6 +240,19 @@ impl NativePaint {
         self
     }
 
+    pub fn set_mask_filter(
+        &mut self,
+        filter: Option<NativeMaskFilter>,
+    ) -> &mut Self {
+        self.mask_filter = filter;
+        self
+    }
+
+    pub fn set_dither(&mut self, enabled: bool) -> &mut Self {
+        self.dither = enabled;
+        self
+    }
+
     pub(crate) fn to_skia_paint(
         &self,
         working_color_space: &SkColorSpace,
@@ -259,6 +293,10 @@ impl NativePaint {
         if let Some(filter) = &self.color_filter {
             paint.set_color_filter(filter.inner.clone());
         }
+        if let Some(filter) = &self.mask_filter {
+            paint.set_mask_filter(filter.inner.clone());
+        }
+        paint.set_dither(self.dither);
         paint
     }
 }

@@ -34,7 +34,9 @@ pub use backend::{
 };
 pub use color::{LinearColorSpace, OutputColorSpace, RgbaLinear};
 pub use error::NativeError;
-pub use filter::{NativeColorFilter, NativeImageFilter};
+pub use filter::{
+    BlurStyle, NativeColorFilter, NativeImageFilter, NativeMaskFilter,
+};
 pub use font::{
     FontAxisTag, FontVariation, InvalidFontAxisTag, NativeFontManager,
 };
@@ -46,7 +48,7 @@ pub use pixels::{
     AlphaMode, ExportedPixels, PixelColorSpace, PixelDepth, PixelExportOptions,
     PixelFormat, RawFrame, RawFrameOptions, SamplingMode, SurfaceOptions,
 };
-pub use recorder::{NativeCanvas, NativeRecorder};
+pub use recorder::{NativeCanvas, NativeRecorder, SaveLayerOptions};
 pub use shader::{GradientInterpolation, GradientStop, NativeShader};
 pub use surface::NativeSurface;
 pub use text::{

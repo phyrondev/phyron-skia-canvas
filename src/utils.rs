@@ -1342,6 +1342,7 @@ pub fn to_blend_mode(mode_name: &str) -> Option<BlendMode> {
         "copy" => BlendMode::Src,
         "destination" => BlendMode::Dst,
         "clear" => BlendMode::Clear,
+        "modulate" => BlendMode::Modulate,
         "source-in" => BlendMode::SrcIn,
         "destination-in" => BlendMode::DstIn,
         "source-out" => BlendMode::SrcOut,
@@ -1377,6 +1378,7 @@ pub fn from_blend_mode(mode: BlendMode) -> String {
         BlendMode::Src => "copy",
         BlendMode::Dst => "destination",
         BlendMode::Clear => "clear",
+        BlendMode::Modulate => "modulate",
         BlendMode::SrcIn => "source-in",
         BlendMode::DstIn => "destination-in",
         BlendMode::SrcOut => "source-out",
@@ -1400,7 +1402,6 @@ pub fn from_blend_mode(mode: BlendMode) -> String {
         BlendMode::Saturation => "saturation",
         BlendMode::Color => "color",
         BlendMode::Luminosity => "luminosity",
-        _ => "source-over",
     }
     .to_string()
 }
