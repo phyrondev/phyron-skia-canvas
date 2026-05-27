@@ -114,3 +114,11 @@ cc = "1"
 lto = "fat"
 codegen-units = 1
 strip = true
+
+[lints.rust]
+# The `objc` crate's `msg_send!` macro (used by the Metal backend) emits
+# an old-style `cfg(feature = "cargo-clippy")`. It expands in our crate,
+# so it's checked against our features and would trip `unexpected_cfgs`
+# under `-D warnings`. Declare it expected rather than chase an `objc`
+# bump through the `cocoa`/`metal` stack.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("cargo-clippy"))'] }
