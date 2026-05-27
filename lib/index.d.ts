@@ -1163,6 +1163,30 @@ export class ImageFilter {
   delete(): void;
 }
 
+/**
+ * Coverage-mask filter (styled Gaussian blur). Unlike an `ImageFilter`
+ * blur, the `BlurStyle` controls how the blur relates to the geometry:
+ * glow, halo, inner shadow, feathered fill. Set on a context via
+ * `ctx.maskFilter`. Mirrors CanvasKit's `MaskFilter`.
+ */
+export class MaskFilter {
+  /**
+   * Gaussian coverage blur.
+   * @param style - "normal" (both sides), "solid" (glow keeping the
+   *   shape), "outer" (halo only), "inner" (inner shadow only)
+   * @param sigma - blur standard deviation in pixels
+   * @param respectCTM - scale the blur with the canvas transform
+   *   (default true); pass false to keep it screen-fixed
+   */
+  static MakeBlur(
+    style: "normal" | "solid" | "outer" | "inner",
+    sigma: number,
+    respectCTM?: boolean,
+  ): MaskFilter | null;
+  /** Mark filter as deleted. Use-after-delete throws Error. */
+  delete(): void;
+}
+
 //
 // Context
 //
@@ -1711,6 +1735,11 @@ export interface CanvasRenderingContext2D
   colorFilter: ColorFilter | null;
   /** Image filter applied during drawing. Set null to disable. */
   imageFilter: ImageFilter | null;
+  /**
+   * Coverage-mask filter (styled blur) applied during drawing -- glows,
+   * feathered edges, outline blur. Set null to disable.
+   */
+  maskFilter: MaskFilter | null;
 
   drawParagraph(paragraph: Paragraph, x: number, y: number): void;
 }

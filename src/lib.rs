@@ -98,6 +98,8 @@ pub mod image;
 #[doc(hidden)]
 pub mod image_filter;
 #[doc(hidden)]
+pub mod mask_filter;
+#[doc(hidden)]
 pub mod paragraph;
 #[doc(hidden)]
 pub mod path;
@@ -328,6 +330,12 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     )?;
     cx.export_function("ImageFilter_repr", image_filter::repr)?;
     cx.export_function("ImageFilter_delete", image_filter::delete)?;
+
+    // -- MaskFilter
+    // --------------------------------------------------------------------
+
+    cx.export_function("MaskFilter_makeBlur", mask_filter::makeBlur)?;
+    cx.export_function("MaskFilter_delete", mask_filter::delete)?;
 
     // -- FontLibrary
     // -------------------------------------------------------------------------------
@@ -782,6 +790,14 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function(
         "CanvasRenderingContext2D_set_skiaImageFilter",
         ctx::set_skiaImageFilter,
+    )?;
+    cx.export_function(
+        "CanvasRenderingContext2D_get_skiaMaskFilter",
+        ctx::get_skiaMaskFilter,
+    )?;
+    cx.export_function(
+        "CanvasRenderingContext2D_set_skiaMaskFilter",
+        ctx::set_skiaMaskFilter,
     )?;
 
     // drawParagraph

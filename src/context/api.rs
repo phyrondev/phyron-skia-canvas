@@ -15,6 +15,7 @@ use crate::{
     filter::Filter,
     image::{BoxedImage, Content},
     image_filter::BoxedImageFilter,
+    mask_filter::BoxedMaskFilter,
     path::Path2D,
     typography::{
         decoration_arg, font_arg, font_features, from_text_align,
@@ -1541,6 +1542,28 @@ pub fn set_colorFilter(mut cx: FunctionContext) -> JsResult<JsUndefined> {
 pub fn get_skiaImageFilter(mut cx: FunctionContext) -> JsResult<JsValue> {
     // Return null - the JS wrapper caches the actual object reference
     Ok(cx.null().upcast())
+}
+
+pub fn get_skiaMaskFilter(mut cx: FunctionContext) -> JsResult<JsValue> {
+    // Return null - the JS wrapper caches the actual object reference.
+    Ok(cx.null().upcast())
+}
+
+pub fn set_skiaMaskFilter(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    let this = cx.argument::<BoxedContext2D>(0)?;
+    let mut this = this.borrow_mut();
+
+    let arg = cx.argument::<JsValue>(1)?;
+    if arg.is_a::<JsNull, _>(&mut cx) || arg.is_a::<JsUndefined, _>(&mut cx) {
+        this.state.skia_mask_filter = None;
+    } else {
+        let filter = arg.downcast_or_throw::<BoxedMaskFilter, _>(&mut cx)?;
+        if filter.borrow().is_deleted() {
+            return cx.throw_error("MaskFilter has been deleted");
+        }
+        this.state.skia_mask_filter = Some(filter.borrow().inner.clone());
+    }
+    Ok(cx.undefined())
 }
 
 pub fn set_skiaImageFilter(mut cx: FunctionContext) -> JsResult<JsUndefined> {
