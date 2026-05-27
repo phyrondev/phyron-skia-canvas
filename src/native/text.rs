@@ -8,10 +8,11 @@ use skia_safe::{
         FontCollection, Paragraph as SkParagraph,
         ParagraphBuilder as SkParagraphBuilder,
         ParagraphStyle as SkParagraphStyle, RectHeightStyle, RectWidthStyle,
-        TextAlign as SkTextAlign, TextDecoration as SkTextDecoration,
+        StrutStyle as SkStrutStyle, TextAlign as SkTextAlign,
+        TextDecoration as SkTextDecoration,
         TextDecorationStyle as SkTextDecorationStyle,
-        TextShadow as SkTextShadow, TextStyle as SkTextStyle,
-        TypefaceFontProvider,
+        TextHeightBehavior as SkTextHeightBehavior, TextShadow as SkTextShadow,
+        TextStyle as SkTextStyle, TypefaceFontProvider,
     },
 };
 
@@ -89,6 +90,62 @@ impl FontFeature {
     }
 }
 
+/// A fixed line box independent of the per-run fonts, for deterministic
+/// leading (captions, subtitles, vertically-aligned blocks). Mirrors
+/// CanvasKit's `StrutStyle`. Attaching `Some(StrutStyle)` to a
+/// [`TextStyle`] enables the strut; `None` leaves Skia's default
+/// (line box driven by the run fonts).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct StrutStyle {
+    /// Strut font families. Empty falls back to the paragraph's fonts.
+    pub font_families: Vec<String>,
+    /// Strut font size in pixels. `None` uses the base text size.
+    pub font_size: Option<f32>,
+    /// Line-height multiplier for the strut line box. `None` leaves it
+    /// unset (Skia uses the font's natural height).
+    pub height: Option<f32>,
+    /// Extra leading added to the strut line, as a multiple of the
+    /// strut font size. `None` leaves Skia's default.
+    pub leading: Option<f32>,
+    /// Clamp every line to the strut height even when its content is
+    /// taller. When `false` the strut acts as a minimum line height.
+    pub force_height: bool,
+    /// Distribute leading half above and half below the text
+    /// (vertical centring within the line box).
+    pub half_leading: bool,
+}
+
+/// How the line-height multiplier is applied to the first ascent and
+/// last descent of a paragraph. Mirrors CanvasKit's
+/// `TextHeightBehavior` and controls first/last-line leading trim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum TextHeightBehavior {
+    /// Apply height to both the first ascent and the last descent.
+    #[default]
+    All,
+    /// Trim the leading above the first line.
+    DisableFirstAscent,
+    /// Trim the leading below the last line.
+    DisableLastDescent,
+    /// Trim both first-line and last-line leading.
+    DisableAll,
+}
+
+impl TextHeightBehavior {
+    fn to_skia(self) -> SkTextHeightBehavior {
+        match self {
+            Self::All => SkTextHeightBehavior::All,
+            Self::DisableFirstAscent => {
+                SkTextHeightBehavior::DisableFirstAscent
+            }
+            Self::DisableLastDescent => {
+                SkTextHeightBehavior::DisableLastDescent
+            }
+            Self::DisableAll => SkTextHeightBehavior::DisableAll,
+        }
+    }
+}
+
 /// Paragraph style. The paragraph-level fields (`align`,
 /// `line_height_multiplier`) only apply when this style is used as the
 /// base for a paragraph; per-span overrides via `RichTextSpan` see
@@ -133,6 +190,21 @@ pub struct TextStyle {
     /// CanvasKit's `TextStyle.fontFeatures`. Applied directly on the
     /// layout `TextStyle`; independent of `font_variations`.
     pub font_features: Vec<FontFeature>,
+    /// Distribute the run's leading half above and half below the text
+    /// (vertical centring within the line box). Mirrors CanvasKit's
+    /// `TextStyle.halfLeading`.
+    pub half_leading: bool,
+    /// Optional strut for deterministic line boxes (paragraph-level).
+    /// `None` leaves Skia's font-driven line height. See [`StrutStyle`].
+    pub strut: Option<StrutStyle>,
+    /// First/last-line leading trim (paragraph-level). Mirrors
+    /// CanvasKit's `ParagraphStyle.textHeightBehavior`.
+    pub text_height_behavior: TextHeightBehavior,
+    /// Maximum number of lines (paragraph-level). `None` is unbounded.
+    /// When set, overflow past this limit is reported by
+    /// [`NativeTextLayout::did_exceed_max_lines`]. Mirrors CanvasKit's
+    /// `ParagraphStyle.maxLines`.
+    pub max_lines: Option<usize>,
 }
 
 impl Default for TextStyle {
@@ -155,6 +227,10 @@ impl Default for TextStyle {
             baseline_shift: 0.0,
             font_variations: Vec::new(),
             font_features: Vec::new(),
+            half_leading: false,
+            strut: None,
+            text_height_behavior: TextHeightBehavior::All,
+            max_lines: None,
         }
     }
 }
@@ -309,6 +385,10 @@ impl NativeTextEngine {
         let mut collection = FontCollection::new();
         collection.set_default_font_manager(FontMgr::new(), None);
         collection.set_asset_font_manager(Some(asset_provider.clone().into()));
+        // Resolve glyphs missing from the matched family against the
+        // system fonts instead of rendering tofu -- matches CanvasKit's
+        // `FontCollection.enableFontFallback`.
+        collection.enable_font_fallback();
         Self {
             collection,
             asset_provider: Some(asset_provider),
@@ -321,6 +401,7 @@ impl NativeTextEngine {
     pub fn with_system_fonts() -> Self {
         let mut collection = FontCollection::new();
         collection.set_default_font_manager(FontMgr::new(), None);
+        collection.enable_font_fallback();
         Self {
             collection,
             asset_provider: None,
@@ -491,6 +572,7 @@ impl NativeTextEngine {
             collection.set_asset_font_manager(Some(provider.clone().into()));
         }
         collection.set_dynamic_font_manager(Some(dynamic.into()));
+        collection.enable_font_fallback();
         collection
     }
 }
@@ -581,6 +663,46 @@ impl NativeTextLayout {
             })
             .collect()
     }
+
+    /// Whether layout dropped content because it exceeded the paragraph
+    /// style's `max_lines`. Drives auto-fit / "text overflows" logic.
+    /// Mirrors CanvasKit's `Paragraph.didExceedMaxLines`.
+    pub fn did_exceed_max_lines(&self) -> bool {
+        self.paragraph.did_exceed_max_lines()
+    }
+
+    /// Bounding boxes of the inline placeholders added during layout, in
+    /// paragraph-local coordinates and in insertion order. Mirrors
+    /// CanvasKit's `Paragraph.getRectsForPlaceholders` -- the readback
+    /// counterpart to placeholder insertion, for positioning inline
+    /// icons/images.
+    pub fn rects_for_placeholders(&self) -> Vec<Rect> {
+        self.paragraph
+            .get_rects_for_placeholders()
+            .into_iter()
+            .map(|tb| {
+                let r = tb.rect;
+                Rect {
+                    left: r.left,
+                    top: r.top,
+                    right: r.right,
+                    bottom: r.bottom,
+                }
+            })
+            .collect()
+    }
+
+    /// Codepoints that no font in the collection could resolve (tofu /
+    /// missing glyphs), for validating automated multi-language renders.
+    /// Mirrors CanvasKit's `Paragraph.unresolvedCodepoints`. Requires
+    /// `&mut self`: Skia computes this lazily on the laid-out paragraph.
+    pub fn unresolved_codepoints(&mut self) -> Vec<u32> {
+        self.paragraph
+            .unresolved_codepoints()
+            .into_iter()
+            .map(|cp| cp as u32)
+            .collect()
+    }
 }
 
 fn build_text_style(style: &TextStyle) -> SkTextStyle {
@@ -620,6 +742,10 @@ fn build_text_style(style: &TextStyle) -> SkTextStyle {
 
     for feature in &style.font_features {
         sk_style.add_font_feature(&feature.name, feature.value);
+    }
+
+    if style.half_leading {
+        sk_style.set_half_leading(true);
     }
 
     let sk_decoration = style.decoration.to_skia();
@@ -665,5 +791,38 @@ fn build_paragraph_style(
         TextAlign::Right => SkTextAlign::Right,
     });
     paragraph_style.set_text_style(base_sk_style);
+
+    if style.text_height_behavior != TextHeightBehavior::All {
+        paragraph_style
+            .set_text_height_behavior(style.text_height_behavior.to_skia());
+    }
+
+    if let Some(max_lines) = style.max_lines {
+        paragraph_style.set_max_lines(max_lines);
+    }
+
+    if let Some(strut) = &style.strut {
+        let mut sk_strut = SkStrutStyle::new();
+        sk_strut.set_strut_enabled(true);
+        if !strut.font_families.is_empty() {
+            let families: Vec<&str> =
+                strut.font_families.iter().map(String::as_str).collect();
+            sk_strut.set_font_families(&families);
+        }
+        if let Some(size) = strut.font_size {
+            sk_strut.set_font_size(size);
+        }
+        if let Some(height) = strut.height {
+            sk_strut.set_height(height);
+            sk_strut.set_height_override(true);
+        }
+        if let Some(leading) = strut.leading {
+            sk_strut.set_leading(leading);
+        }
+        sk_strut.set_force_strut_height(strut.force_height);
+        sk_strut.set_half_leading(strut.half_leading);
+        paragraph_style.set_strut_style(sk_strut);
+    }
+
     paragraph_style
 }

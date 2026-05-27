@@ -2023,6 +2023,32 @@ export interface TextStyleInput {
    * exposes these too; this is the rich-text/paragraph equivalent.
    */
   fontFeatures?: TextFontFeatures[];
+  /**
+   * Distribute the run's leading half above and half below the text,
+   * centring it within the line box. Mirrors CanvasKit's
+   * `TextStyle.halfLeading`.
+   */
+  halfLeading?: boolean;
+}
+
+/**
+ * A fixed line box independent of the per-run fonts, for deterministic
+ * leading (captions, subtitles, vertically-aligned blocks). Mirrors
+ * CanvasKit's `StrutStyle`. Presence on a paragraph style enables the
+ * strut unless `enabled` is explicitly `false`.
+ */
+export interface StrutStyleInput {
+  enabled?: boolean;
+  fontFamilies?: string[];
+  fontSize?: number;
+  /** Line-height multiplier for the strut line box. */
+  heightMultiplier?: number;
+  /** Extra leading as a multiple of the strut font size. */
+  leading?: number;
+  /** Clamp every line to the strut height (vs. treat it as a minimum). */
+  forceStrutHeight?: boolean;
+  /** Distribute leading half above / half below the text. */
+  halfLeading?: boolean;
 }
 
 export interface ParagraphStyleInput {
@@ -2031,6 +2057,14 @@ export interface ParagraphStyleInput {
   maxLines?: number;
   ellipsis?: string;
   textStyle?: TextStyleInput;
+  /** Fixed line box for deterministic leading. */
+  strutStyle?: StrutStyleInput;
+  /**
+   * First/last-line leading trim: `0` All, `1` DisableFirstAscent,
+   * `2` DisableLastDescent, `3` DisableAll. Mirrors CanvasKit's
+   * `TextHeightBehavior`.
+   */
+  textHeightBehavior?: number;
 }
 
 export interface GlyphPosition {
@@ -2093,6 +2127,20 @@ export class Paragraph {
     wStyle?: number,
   ): TextBox[];
   getLineMetrics(): LineMetrics[];
+  /** Whether layout dropped content past the style's `maxLines`. */
+  didExceedMaxLines(): boolean;
+  /** Number of laid-out lines. */
+  getNumberOfLines(): number;
+  /**
+   * Bounding boxes of the inline placeholders, in insertion order --
+   * the readback counterpart to `ParagraphBuilder.addPlaceholder`.
+   */
+  getRectsForPlaceholders(): TextBox[];
+  /**
+   * Codepoints no font in the collection could resolve (tofu / missing
+   * glyphs), for validating automated multi-language renders.
+   */
+  getUnresolvedCodepoints(): number[];
 }
 
 //

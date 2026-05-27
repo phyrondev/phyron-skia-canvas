@@ -1,9 +1,10 @@
 use anyhow::{Context, Result};
 use skia_canvas::native::{
-    EngineKind, FontAxisTag, FontVariation, LinearColorSpace, NativeBackend,
-    NativeError, NativeFontManager, NativeImage, NativePaint, NativeRecorder,
-    NativeTextEngine, PixelFormat, RawFrameOptions, Rect, RenderEngine,
-    RgbaLinear, SurfaceOptions, TextBoxOptions, TextStyle,
+    EngineKind, FontAxisTag, FontFeature, FontVariation, LinearColorSpace,
+    NativeBackend, NativeError, NativeFontManager, NativeImage, NativePaint,
+    NativeRecorder, NativeTextEngine, PixelFormat, RawFrameOptions, Rect,
+    RenderEngine, RgbaLinear, StrutStyle, SurfaceOptions, TextBoxOptions,
+    TextStyle,
 };
 
 #[test]
@@ -309,6 +310,94 @@ fn text_layout_honors_font_variations_wght_axis() -> Result<()> {
     assert!(
         bold > thin,
         "wght=700 should produce more ink than wght=200; got thin={thin} bold={bold}",
+    );
+    Ok(())
+}
+
+#[test]
+fn text_layout_font_features_apply_without_error() -> Result<()> {
+    // Features that the typeface may or may not implement must never
+    // break layout; they're applied on the layout `TextStyle` directly.
+    let engine = NativeTextEngine::with_system_fonts();
+    let style = TextStyle {
+        font_size: 32.0,
+        color: RgbaLinear::opaque(1.0, 1.0, 1.0),
+        font_features: vec![
+            FontFeature::on("smcp"),
+            FontFeature::off("liga"),
+            FontFeature::new("ss01", 1),
+        ],
+        ..TextStyle::default()
+    };
+    let layout = engine.layout_text("Studio Figures 1234", &style, 400.0);
+    assert!(layout.width() > 0.0, "feature-styled text laid out empty");
+    assert_eq!(FontFeature::on("tnum"), FontFeature::new("tnum", 1));
+    assert_eq!(FontFeature::off("tnum"), FontFeature::new("tnum", 0));
+    Ok(())
+}
+
+#[test]
+fn text_layout_strut_forces_line_height() -> Result<()> {
+    let engine = NativeTextEngine::with_system_fonts();
+    let base = TextStyle {
+        font_size: 16.0,
+        ..TextStyle::default()
+    };
+    let strutted = TextStyle {
+        strut: Some(StrutStyle {
+            font_size: Some(64.0),
+            height: Some(1.0),
+            force_height: true,
+            ..StrutStyle::default()
+        }),
+        ..base.clone()
+    };
+    let plain_h = engine.layout_text("One line", &base, 400.0).height();
+    let strut_h = engine.layout_text("One line", &strutted, 400.0).height();
+    // A forced 64px strut line box must be taller than the natural 16px
+    // line. If the strut were ignored the two heights would match.
+    assert!(
+        strut_h > plain_h * 2.0,
+        "strut should force a taller line box; plain={plain_h} strut={strut_h}",
+    );
+    Ok(())
+}
+
+#[test]
+fn text_layout_reports_max_line_overflow() -> Result<()> {
+    let engine = NativeTextEngine::with_system_fonts();
+    let style = TextStyle {
+        font_size: 20.0,
+        max_lines: Some(1),
+        ..TextStyle::default()
+    };
+    // Force wrapping into multiple lines by giving a narrow budget, then
+    // cap at one line: the layout must report the overflow.
+    let layout = engine.layout_text(
+        "The quick brown fox jumps over the lazy dog",
+        &style,
+        80.0,
+    );
+    assert_eq!(layout.line_count(), 1, "max_lines=1 should clamp to 1 line");
+    assert!(
+        layout.did_exceed_max_lines(),
+        "wrapped text capped at 1 line should report did_exceed_max_lines",
+    );
+    Ok(())
+}
+
+#[test]
+fn text_layout_unresolved_codepoints_empty_for_latin() -> Result<()> {
+    let engine = NativeTextEngine::with_system_fonts();
+    let style = TextStyle {
+        font_size: 24.0,
+        ..TextStyle::default()
+    };
+    let mut layout = engine.layout_text("Hello", &style, 400.0);
+    // With system-font fallback enabled, plain Latin must resolve fully.
+    assert!(
+        layout.unresolved_codepoints().is_empty(),
+        "basic Latin should have no unresolved codepoints with fallback on",
     );
     Ok(())
 }

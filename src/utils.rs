@@ -294,6 +294,17 @@ pub fn opt_string_for_key(
         .map(|v| v.value(cx))
 }
 
+pub fn opt_bool_for_key(
+    cx: &mut FunctionContext,
+    obj: &Handle<JsObject>,
+    attr: &str,
+) -> Option<bool> {
+    obj.get(cx, attr)
+        .ok()
+        .and_then(|val: Handle<JsValue>| val.downcast::<JsBoolean, _>(cx).ok())
+        .map(|v| v.value(cx))
+}
+
 pub fn string_for_key(
     cx: &mut FunctionContext,
     obj: &Handle<JsObject>,

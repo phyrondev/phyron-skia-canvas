@@ -388,6 +388,22 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
         "Paragraph_getRectsForRange",
         paragraph::getRectsForRange,
     )?;
+    cx.export_function(
+        "Paragraph_didExceedMaxLines",
+        paragraph::didExceedMaxLines,
+    )?;
+    cx.export_function(
+        "Paragraph_getNumberOfLines",
+        paragraph::getNumberOfLines,
+    )?;
+    cx.export_function(
+        "Paragraph_getRectsForPlaceholders",
+        paragraph::getRectsForPlaceholders,
+    )?;
+    cx.export_function(
+        "Paragraph_getUnresolvedCodepoints",
+        paragraph::getUnresolvedCodepoints,
+    )?;
 
     // -- Backend (module-level)
     // --------------------------------------------------------------------

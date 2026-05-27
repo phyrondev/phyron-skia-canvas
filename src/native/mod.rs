@@ -51,6 +51,7 @@ pub use shader::{GradientInterpolation, GradientStop, NativeShader};
 pub use surface::NativeSurface;
 pub use text::{
     FontFeature, NativeLineMetrics, NativeTextEngine, NativeTextLayout,
-    RichTextSpan, TextAlign, TextBoxOptions, TextDecoration,
-    TextDecorationStyle, TextShadow, TextSlant, TextStyle, VerticalAlign,
+    RichTextSpan, StrutStyle, TextAlign, TextBoxOptions, TextDecoration,
+    TextDecorationStyle, TextHeightBehavior, TextShadow, TextSlant, TextStyle,
+    VerticalAlign,
 };
