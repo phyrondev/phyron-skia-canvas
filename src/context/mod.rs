@@ -5,7 +5,7 @@ use skia_safe::{
     ColorFilter as SkColorFilter, ColorSpace, Contains, FourByteTag, IRect,
     Image, ImageFilter as SkImageFilter, MaskFilter as SkMaskFilter, Paint,
     PaintStyle, Path, PathBuilder, PathFillType, PathOp, Picture,
-    PictureRecorder, Point, Rect, Size,
+    PictureRecorder, Point, Rect, Shader as SkShader, Size,
     canvas::{SaveLayerRec, SrcRectConstraint::Strict},
     dash_path_effect,
     font_style::{FontStyle, Width},
@@ -27,6 +27,7 @@ use crate::{
     gradient::{BoxedCanvasGradient, CanvasGradient},
     image::ImageData,
     pattern::{BoxedCanvasPattern, CanvasPattern},
+    shader::BoxedShader,
     texture::{BoxedCanvasTexture, CanvasTexture},
     typography::{Baseline, DecorationStyle, FontSpec, Spacing, Typesetter},
     utils::*,
@@ -1009,6 +1010,9 @@ pub enum Dye {
     Gradient(CanvasGradient),
     Pattern(CanvasPattern),
     Texture(CanvasTexture),
+    /// A reusable Skia shader (e.g. fractal noise / turbulence) set as a
+    /// fill or stroke style.
+    Shader(SkShader),
 }
 
 impl Dye {
@@ -1025,6 +1029,8 @@ impl Dye {
         } else if let Ok(texture) = value.downcast::<BoxedCanvasTexture, _>(cx)
         {
             Some(Dye::Texture(texture.borrow().clone()))
+        } else if let Ok(shader) = value.downcast::<BoxedShader, _>(cx) {
+            Some(Dye::Shader(shader.borrow().inner.clone()))
         } else {
             color4f_in(cx, value).map(|(c, cs)| {
                 // CSS colors are tagged as sRGB by color4f_in.
@@ -1057,6 +1063,7 @@ impl Dye {
             Dye::Gradient(gradient) => gradient.is_opaque(),
             Dye::Pattern(pattern) => pattern.is_opaque(),
             Dye::Texture(_) => false,
+            Dye::Shader(_) => false,
         }
     }
 
@@ -1083,6 +1090,9 @@ impl Dye {
             Dye::Texture(texture) => {
                 let (color, cs) = texture.to_color4f(alpha);
                 paint.set_color4f(color, cs.as_ref());
+            }
+            Dye::Shader(shader) => {
+                paint.set_shader(Some(shader.clone())).set_alpha_f(alpha);
             }
         };
     }

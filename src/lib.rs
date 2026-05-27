@@ -106,6 +106,8 @@ pub mod path;
 #[doc(hidden)]
 pub mod pattern;
 #[doc(hidden)]
+pub mod shader;
+#[doc(hidden)]
 pub mod texture;
 #[doc(hidden)]
 pub mod typography;
@@ -336,6 +338,13 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
 
     cx.export_function("MaskFilter_makeBlur", mask_filter::makeBlur)?;
     cx.export_function("MaskFilter_delete", mask_filter::delete)?;
+
+    // -- Shader
+    // --------------------------------------------------------------------
+
+    cx.export_function("Shader_makeFractalNoise", shader::makeFractalNoise)?;
+    cx.export_function("Shader_makeTurbulence", shader::makeTurbulence)?;
+    cx.export_function("Shader_delete", shader::delete)?;
 
     // -- FontLibrary
     // -------------------------------------------------------------------------------

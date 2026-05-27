@@ -1188,6 +1188,37 @@ export class MaskFilter {
 }
 
 /**
+ * A reusable shader, settable as `ctx.fillStyle` / `strokeStyle`.
+ * Currently the procedural-noise factories; gradient shaders are
+ * reachable via `createLinear/Radial/ConicGradient`. Mirrors CanvasKit's
+ * `Shader`.
+ */
+export class Shader {
+  /**
+   * Fractal (Perlin) noise -- film grain, clouds, organic texture.
+   * @param baseFreqX - noise frequency along x (small = larger features)
+   * @param baseFreqY - noise frequency along y
+   * @param octaves - detail levels
+   * @param seed - pattern seed
+   */
+  static MakeFractalNoise(
+    baseFreqX: number,
+    baseFreqY: number,
+    octaves: number,
+    seed: number,
+  ): Shader | null;
+  /** Turbulence (absolute-value Perlin noise) -- sharper than fractal. */
+  static MakeTurbulence(
+    baseFreqX: number,
+    baseFreqY: number,
+    octaves: number,
+    seed: number,
+  ): Shader | null;
+  /** Mark shader as deleted. Use-after-delete throws Error. */
+  delete(): void;
+}
+
+/**
  * 4x5 color-matrix helpers (CanvasKit `ColorMatrixHelpers`). Each method
  * returns a 20-element row-major matrix for `ColorFilter.MakeMatrix`.
  * Use to build hue-rotate / saturation / brightness grades.
