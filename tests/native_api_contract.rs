@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
 use skia_canvas::native::{
     BlendMode, BlurStyle, EngineKind, FontAxisTag, FontFeature, FontVariation,
-    LinearColorSpace, NativeBackend, NativeError, NativeFontManager,
-    NativeImage, NativeMaskFilter, NativePaint, NativeRecorder,
-    NativeTextEngine, PixelFormat, RawFrameOptions, Rect, RenderEngine,
-    RgbaLinear, SaveLayerOptions, StrutStyle, SurfaceOptions, TextBoxOptions,
-    TextStyle,
+    GradientInterpolation, GradientStop, LinearColorSpace, NativeBackend,
+    NativeError, NativeFontManager, NativeImage, NativeMaskFilter, NativePaint,
+    NativeRecorder, NativeShader, NativeTextEngine, PixelFormat, Point,
+    RawFrameOptions, Rect, RenderEngine, RgbaLinear, SaveLayerOptions,
+    StrutStyle, SurfaceOptions, TextBoxOptions, TextStyle,
 };
 
 #[test]
@@ -471,6 +471,78 @@ fn paint_compositing_extras_render() -> Result<()> {
     assert!(
         center[0] > 245 && center[1] > 245 && center[2] > 245,
         "Clear inside the layer should expose the white backdrop; got {center:?}",
+    );
+    Ok(())
+}
+
+#[test]
+fn shader_gradient_variants_and_noise() -> Result<()> {
+    let stops = [
+        GradientStop {
+            position: 0.0,
+            color: RgbaLinear::opaque(1.0, 0.0, 0.0),
+        },
+        GradientStop {
+            position: 1.0,
+            color: RgbaLinear::opaque(0.0, 0.0, 1.0),
+        },
+    ];
+    let interp = GradientInterpolation::Srgb;
+    // Every factory must build a shader from valid stops.
+    let radial = NativeShader::radial_gradient(
+        Point::new(32.0, 32.0),
+        30.0,
+        &stops,
+        interp,
+    )?;
+    NativeShader::sweep_gradient(
+        Point::new(32.0, 32.0),
+        0.0,
+        360.0,
+        &stops,
+        interp,
+    )?;
+    NativeShader::two_point_conical_gradient(
+        Point::new(16.0, 32.0),
+        0.0,
+        Point::new(48.0, 32.0),
+        24.0,
+        &stops,
+        interp,
+    )?;
+    NativeShader::fractal_noise(0.1, 0.1, 2, 1.0)?;
+    NativeShader::turbulence(0.2, 0.2, 3, 7.0)?;
+    // A single stop is rejected.
+    assert!(
+        NativeShader::radial_gradient(
+            Point::new(0.0, 0.0),
+            1.0,
+            &stops[..1],
+            interp,
+        )
+        .is_err(),
+        "a one-stop gradient should be rejected",
+    );
+
+    // Painting the radial gradient over the surface fills it with color.
+    let mut recorder =
+        NativeRecorder::new(Rect::from_xywh(0.0, 0.0, 64.0, 64.0))?;
+    recorder.record(|canvas| {
+        canvas.clear(RgbaLinear::opaque(0.0, 0.0, 0.0));
+        let mut paint = NativePaint::fill(RgbaLinear::opaque(1.0, 1.0, 1.0));
+        paint.set_shader(Some(radial.clone()));
+        canvas.draw_rect(Rect::from_xywh(0.0, 0.0, 64.0, 64.0), &paint);
+    });
+    let frame = recorder
+        .render_raw(SurfaceOptions::default(), RawFrameOptions::default())?;
+    let lit = frame
+        .pixels()
+        .chunks_exact(4)
+        .filter(|p| p[0] > 16 || p[2] > 16)
+        .count();
+    assert!(
+        lit > 1000,
+        "radial gradient should fill most pixels; lit={lit}"
     );
     Ok(())
 }

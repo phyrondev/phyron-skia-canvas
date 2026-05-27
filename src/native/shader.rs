@@ -4,6 +4,7 @@ use skia_safe::{
         Colors as GradientColors, Gradient as SkGradient, Interpolation,
         interpolation, shaders as gradient_shaders,
     },
+    shaders as noise_shaders,
 };
 
 use crate::native::{color::RgbaLinear, error::NativeError, geometry::Point};
@@ -44,8 +45,10 @@ pub struct GradientStop {
     pub color: RgbaLinear,
 }
 
-/// Public shader handle used by `NativePaint::set_shader`. Currently
-/// only linear gradients are exposed; radial/sweep/conic land later.
+/// Public shader handle used by `NativePaint::set_shader`. Exposes the
+/// gradient factories (linear / radial / sweep / two-point conical) plus
+/// procedural Perlin noise (fractal noise / turbulence). Mirrors the
+/// CanvasKit `ShaderFactory` surface.
 #[derive(Clone)]
 pub struct NativeShader {
     pub(crate) inner: SkShader,
@@ -58,18 +61,14 @@ impl std::fmt::Debug for NativeShader {
 }
 
 impl NativeShader {
-    /// Build a linear gradient between `start` and `end` from a sorted
-    /// list of stops. Stops must be in ascending position order with
-    /// positions in `0.0..=1.0`; violations return
-    /// `NativeError::InvalidGradient`. Colors are interpreted in the
-    /// destination surface's working color space (no extra primaries
-    /// conversion).
-    pub fn linear_gradient(
-        start: Point,
-        end: Point,
+    /// Validate `stops` and produce the unpremultiplied `Color4f` list,
+    /// position list, and interpolation config shared by every gradient
+    /// factory. Stops must be >= 2, sorted ascending, with the first and
+    /// last positions in `0.0..=1.0`.
+    fn prepare_stops(
         stops: &[GradientStop],
         interpolation_space: GradientInterpolation,
-    ) -> Result<Self, NativeError> {
+    ) -> Result<(Vec<Color4f>, Vec<f32>, Interpolation), NativeError> {
         if stops.len() < 2 {
             return Err(NativeError::InvalidGradient {
                 reason: format!("need at least 2 stops, got {}", stops.len()),
@@ -122,17 +121,26 @@ impl NativeShader {
             color_space: interpolation_space.to_skia(),
             hue_method: interpolation::HueMethod::Shorter,
         };
+        Ok((colors, positions, interp))
+    }
 
-        // `Colors::new` carries the stops + their positions + tile
-        // mode + (optional) color space; `None` here keeps the
-        // pipeline's "treat `Color4f` as already in the destination's
-        // working color space" semantic that matches our
-        // `RgbaLinear` convention -- unlike `Paint::set_color4f`,
-        // which treats `None` as sRGB-encoded. Tagging with
-        // `Some(ColorSpace::new_srgb_linear())` engages Skia's
-        // primaries-conversion path, which crashes on the
-        // `interpolation::ColorSpace::OKLCH` variant in this Skia
-        // build.
+    /// Build a linear gradient between `start` and `end` from a sorted
+    /// list of stops. Colors are interpreted in the destination
+    /// surface's working color space (no extra primaries conversion).
+    pub fn linear_gradient(
+        start: Point,
+        end: Point,
+        stops: &[GradientStop],
+        interpolation_space: GradientInterpolation,
+    ) -> Result<Self, NativeError> {
+        let (colors, positions, interp) =
+            Self::prepare_stops(stops, interpolation_space)?;
+        // `Colors::new` carries the stops + positions + tile mode +
+        // (optional) color space; `None` keeps the pipeline's "treat
+        // `Color4f` as already in the destination's working color space"
+        // semantic that matches our `RgbaLinear` convention. Tagging a
+        // color space would engage Skia's primaries-conversion path,
+        // which crashes on the OKLCH variant in this Skia build.
         let stop_colors = GradientColors::new(
             &colors,
             Some(positions.as_slice()),
@@ -147,6 +155,140 @@ impl NativeShader {
         )
         .ok_or_else(|| NativeError::InvalidGradient {
             reason: "skia could not build linear gradient".to_string(),
+        })?;
+        Ok(Self { inner: shader })
+    }
+
+    /// Radial gradient centered at `center` with the given `radius`.
+    pub fn radial_gradient(
+        center: Point,
+        radius: f32,
+        stops: &[GradientStop],
+        interpolation_space: GradientInterpolation,
+    ) -> Result<Self, NativeError> {
+        let (colors, positions, interp) =
+            Self::prepare_stops(stops, interpolation_space)?;
+        let stop_colors = GradientColors::new(
+            &colors,
+            Some(positions.as_slice()),
+            TileMode::Clamp,
+            None,
+        );
+        let gradient = SkGradient::new(stop_colors, interp);
+        let shader = gradient_shaders::radial_gradient(
+            (SkPoint::new(center.x, center.y), radius),
+            &gradient,
+            None,
+        )
+        .ok_or_else(|| NativeError::InvalidGradient {
+            reason: "skia could not build radial gradient".to_string(),
+        })?;
+        Ok(Self { inner: shader })
+    }
+
+    /// Sweep (angular / conic) gradient around `center`, sweeping from
+    /// `start_angle` to `end_angle` in degrees (clockwise from +x).
+    pub fn sweep_gradient(
+        center: Point,
+        start_angle: f32,
+        end_angle: f32,
+        stops: &[GradientStop],
+        interpolation_space: GradientInterpolation,
+    ) -> Result<Self, NativeError> {
+        let (colors, positions, interp) =
+            Self::prepare_stops(stops, interpolation_space)?;
+        let stop_colors = GradientColors::new(
+            &colors,
+            Some(positions.as_slice()),
+            TileMode::Clamp,
+            None,
+        );
+        let gradient = SkGradient::new(stop_colors, interp);
+        let shader = gradient_shaders::sweep_gradient(
+            SkPoint::new(center.x, center.y),
+            (start_angle, end_angle),
+            &gradient,
+            None,
+        )
+        .ok_or_else(|| NativeError::InvalidGradient {
+            reason: "skia could not build sweep gradient".to_string(),
+        })?;
+        Ok(Self { inner: shader })
+    }
+
+    /// Two-point conical (two-circle) gradient between a start circle
+    /// `(start, start_radius)` and an end circle `(end, end_radius)`.
+    /// The two-circle form CanvasKit exposes that the Canvas2D radial
+    /// gradient does not.
+    pub fn two_point_conical_gradient(
+        start: Point,
+        start_radius: f32,
+        end: Point,
+        end_radius: f32,
+        stops: &[GradientStop],
+        interpolation_space: GradientInterpolation,
+    ) -> Result<Self, NativeError> {
+        let (colors, positions, interp) =
+            Self::prepare_stops(stops, interpolation_space)?;
+        let stop_colors = GradientColors::new(
+            &colors,
+            Some(positions.as_slice()),
+            TileMode::Clamp,
+            None,
+        );
+        let gradient = SkGradient::new(stop_colors, interp);
+        let shader = gradient_shaders::two_point_conical_gradient(
+            (SkPoint::new(start.x, start.y), start_radius),
+            (SkPoint::new(end.x, end.y), end_radius),
+            &gradient,
+            None,
+        )
+        .ok_or_else(|| NativeError::InvalidGradient {
+            reason: "skia could not build two-point conical gradient"
+                .to_string(),
+        })?;
+        Ok(Self { inner: shader })
+    }
+
+    /// Procedural fractal (Perlin) noise -- film grain, clouds, organic
+    /// texture. `base_frequency` is the noise frequency per axis (small
+    /// values = larger features); `octaves` adds detail; `seed` varies
+    /// the pattern. Mirrors CanvasKit's `Shader.MakeFractalNoise`.
+    pub fn fractal_noise(
+        base_frequency_x: f32,
+        base_frequency_y: f32,
+        octaves: usize,
+        seed: f32,
+    ) -> Result<Self, NativeError> {
+        let shader = noise_shaders::fractal_noise(
+            (base_frequency_x, base_frequency_y),
+            octaves,
+            seed,
+            None,
+        )
+        .ok_or_else(|| NativeError::InvalidGradient {
+            reason: "skia could not build fractal noise shader".to_string(),
+        })?;
+        Ok(Self { inner: shader })
+    }
+
+    /// Procedural turbulence (absolute-value Perlin noise) -- sharper,
+    /// more chaotic than fractal noise. Mirrors CanvasKit's
+    /// `Shader.MakeTurbulence`.
+    pub fn turbulence(
+        base_frequency_x: f32,
+        base_frequency_y: f32,
+        octaves: usize,
+        seed: f32,
+    ) -> Result<Self, NativeError> {
+        let shader = noise_shaders::turbulence(
+            (base_frequency_x, base_frequency_y),
+            octaves,
+            seed,
+            None,
+        )
+        .ok_or_else(|| NativeError::InvalidGradient {
+            reason: "skia could not build turbulence shader".to_string(),
         })?;
         Ok(Self { inner: shader })
     }
