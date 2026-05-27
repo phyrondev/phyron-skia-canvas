@@ -58,7 +58,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! skia-canvas = { version = "0.1", default-features = false, features = ["vulkan", "freetype"] }
+//! skia-canvas = { version = "0.2", default-features = false, features = ["vulkan", "freetype"] }
 //! ```
 //!
 //! [Skia]: https://skia.org

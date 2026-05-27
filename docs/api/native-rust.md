@@ -137,3 +137,28 @@ rg -n "use skia_safe" tests/native_studio_renderer_adapter.rs
 ```
 
 The first two should be empty. The third returns only doc-comment hits referring to the audit itself.
+
+## CanvasKit parity additions (0.2.0)
+
+The P0+P1 CanvasKit-parity sweep added the following to the `native`
+facade. See the rustdoc on each item for full per-argument detail.
+
+- **Text**: `TextStyle.font_features: Vec<FontFeature>` (OpenType
+  features), `TextStyle.{half_leading, strut, text_height_behavior,
+  max_lines}` with the `StrutStyle` and `TextHeightBehavior` types;
+  `NativeTextLayout::{did_exceed_max_lines, number_of_lines (line_count),
+  rects_for_placeholders, unresolved_codepoints}`; font fallback is
+  enabled on every `NativeTextEngine` collection.
+- **Paint**: `NativePaint.{dither, mask_filter}` with `set_dither` /
+  `set_mask_filter`; `NativeMaskFilter::blur(BlurStyle, sigma,
+  respect_ctm)`; `BlendMode::{Clear, Modulate, Destination}`.
+- **Canvas**: `NativeCanvas::save_layer_with(SaveLayerOptions { paint,
+  bounds, backdrop })`.
+- **Shaders**: `NativeShader::{radial_gradient, sweep_gradient,
+  two_point_conical_gradient, fractal_noise, turbulence}` alongside the
+  existing `linear_gradient`.
+- **Images**: `SamplingMode::Cubic` (Mitchell-Netravali bicubic).
+
+`ColorFilter`-side color-matrix helpers ship on the Node surface as the
+`ColorMatrix` object; on the Rust side, build the 4x5 matrix directly and
+pass it to `NativeImageFilter::color_matrix`.
