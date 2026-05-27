@@ -3,8 +3,9 @@ use neon::prelude::*;
 use skia_safe::{
     BlendMode, Canvas as SkCanvas, ClipOp, Color, Color4f,
     ColorFilter as SkColorFilter, ColorSpace, Contains, FourByteTag, IRect,
-    Image, ImageFilter as SkImageFilter, Paint, PaintStyle, Path, PathBuilder,
-    PathFillType, PathOp, Picture, PictureRecorder, Point, Rect, Size,
+    Image, ImageFilter as SkImageFilter, MaskFilter as SkMaskFilter, Paint,
+    PaintStyle, Path, PathBuilder, PathFillType, PathOp, Picture,
+    PictureRecorder, Point, Rect, Size,
     canvas::SrcRectConstraint::Strict,
     dash_path_effect,
     font_style::{FontStyle, Width},
@@ -75,6 +76,8 @@ pub struct State {
     // Skia filter objects for CanvasKit parity
     skia_color_filter: Option<SkColorFilter>,
     skia_image_filter: Option<SkImageFilter>,
+    skia_mask_filter: Option<SkMaskFilter>,
+    dither: bool,
 
     font: String,
     font_variant: String,
@@ -135,6 +138,8 @@ impl Default for State {
 
             skia_color_filter: None,
             skia_image_filter: None,
+            skia_mask_filter: None,
+            dither: false,
 
             shadow_blur: 0.0,
             shadow_color: TRANSPARENT,
@@ -813,6 +818,12 @@ impl Context2D {
             paint.set_image_filter(final_image_filter);
         }
 
+        // 4. Apply Skia maskFilter (coverage blur with BlurStyle) and dither.
+        if let Some(mf) = &self.state.skia_mask_filter {
+            paint.set_mask_filter(mf.clone());
+        }
+        paint.set_dither(self.state.dither);
+
         self.state.dye(style).mix_into(
             &mut paint,
             self.state.global_alpha,
@@ -883,6 +894,11 @@ impl Context2D {
             };
             paint.set_image_filter(final_image_filter);
         }
+
+        if let Some(mf) = &self.state.skia_mask_filter {
+            paint.set_mask_filter(mf.clone());
+        }
+        paint.set_dither(self.state.dither);
 
         paint
     }

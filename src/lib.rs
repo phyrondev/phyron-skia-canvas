@@ -601,6 +601,8 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
         "CanvasRenderingContext2D_set_imageSmoothingEnabled",
         ctx::set_imageSmoothingEnabled,
     )?;
+    cx.export_function("CanvasRenderingContext2D_get_dither", ctx::get_dither)?;
+    cx.export_function("CanvasRenderingContext2D_set_dither", ctx::set_dither)?;
     cx.export_function(
         "CanvasRenderingContext2D_get_imageSmoothingQuality",
         ctx::get_imageSmoothingQuality,

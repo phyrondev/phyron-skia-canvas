@@ -1473,6 +1473,12 @@ interface CanvasImageData {
 interface CanvasImageSmoothing {
   /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/imageSmoothingEnabled) */
   imageSmoothingEnabled: boolean;
+  /**
+   * Dither draws to break up banding in gradients and dark frames on
+   * 8-bit surfaces. Mirrors CanvasKit's `Paint.setDither`. Not part of
+   * the HTML Canvas standard. Default `false`.
+   */
+  dither: boolean;
   /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/imageSmoothingQuality) */
   imageSmoothingQuality: ImageSmoothingQuality;
 }

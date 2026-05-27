@@ -1039,6 +1039,20 @@ pub fn set_imageSmoothingEnabled(
     Ok(cx.undefined())
 }
 
+pub fn get_dither(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    let this = cx.argument::<BoxedContext2D>(0)?;
+    let this = this.borrow();
+    Ok(cx.boolean(this.state.dither))
+}
+
+pub fn set_dither(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    let this = cx.argument::<BoxedContext2D>(0)?;
+    let mut this = this.borrow_mut();
+    let flag = bool_arg(&mut cx, 1, "dither")?;
+    this.state.dither = flag;
+    Ok(cx.undefined())
+}
+
 pub fn get_imageSmoothingQuality(
     mut cx: FunctionContext,
 ) -> JsResult<JsString> {
