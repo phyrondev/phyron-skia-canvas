@@ -140,6 +140,22 @@ function matrix() {
   console.log(JSON.stringify(Object.keys(TARGETS)));
 }
 
+// Writes `optionalDependencies` from the target table.
+//
+// Deliberately not committed ahead of time. npm records the declaration but resolves no lockfile
+// entry for a name it cannot fetch, so `npm ci` rejects the lockfile as out of sync and every
+// workflow that runs it fails. Run this once the platform packages for `version` are on the
+// registry, then `npm install` to refresh the lockfile.
+async function sync() {
+  const pkg = await manifest();
+  pkg.optionalDependencies = Object.fromEntries(
+    Object.keys(TARGETS).map((triplet) => [`phyron-skia-canvas-${triplet}`, pkg.version]),
+  );
+  await writeFile(PACKAGE_JSON, JSON.stringify(pkg, null, 2) + "\n");
+  console.log(`optionalDependencies synced to ${Object.keys(TARGETS).length} targets at ${pkg.version}`);
+  console.log("run `npm install` to refresh the lockfile");
+}
+
 const [cmd, ...args] = process.argv.slice(2);
 
 if (cmd === "build") {
@@ -151,9 +167,11 @@ if (cmd === "build") {
   await build(triplet, stagingDir);
 } else if (cmd === "matrix") {
   matrix();
+} else if (cmd === "sync") {
+  await sync();
 } else {
-  console.error(`usage: node scripts/platform-package.mjs [build <triplet> <dir> | matrix]`);
+  console.error(`usage: node scripts/platform-package.mjs [build <triplet> <dir> | matrix | sync]`);
   process.exit(1);
 }
 
-export { TARGETS, build };
+export { TARGETS, build, sync };
