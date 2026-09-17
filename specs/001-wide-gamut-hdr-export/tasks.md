@@ -40,7 +40,7 @@ it runs in CI.
 
 ## Phase 4: User Story 0 and 3 -- Working Space (`contracts/working-space.md`)
 
-- [ ] T010 [P] Add W1-W5 tests to `tests/suite/color.test.js`.
+- [ ] T010 [P] Add W1-W9 tests to `tests/suite/color.test.js`.
 - [ ] T011 `src/context/page.rs`: `ExportOptions.working_color_type`,
   `working_color_space`; `Page::encoded_as` and `PageRecorder::update`
   allocate with them; `PageCache` stores and compares them;
@@ -48,8 +48,13 @@ it runs in CI.
 - [ ] T012 `src/node/canvas.rs` (`toBuffer`, `toBufferSync`, `save`,
   `saveSync`) and `src/context/api.rs` (`getImageData`): fill the working
   fields from `Canvas`.
-- [ ] T013 `PageRecorder::get_image`: working space, `BitDepth::F16` for non
-  8-bit working types.
+- [ ] T013 `PageRecorder::get_image`: rasterize into a raster surface of the
+  source working colour type and space (research: `drawImage(canvas)`
+  precision).
+- [ ] T013a Float `putImageData`: check `src/context/api.rs` `putImageData`
+  keeps unclamped values; fix if not (W9).
+- [ ] T013b Timing script for 1920x1080 `drawImage(canvas)`, run against
+  `3.6.0` and the branch build (W10).
 
 ## Phase 5: User Story 1 -- Output Encoding (`contracts/raw-export.md` E1-E7)
 

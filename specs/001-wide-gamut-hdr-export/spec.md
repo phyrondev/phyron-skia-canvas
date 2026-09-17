@@ -21,9 +21,14 @@ Today the export step mixes the two:
 - The page cache does not record colour space or colour type. A second export
   of an unchanged canvas with other colour options reuses the first result.
 - `toBuffer("raw", { colorSpace })` always converts to sRGB at readback.
-- `drawImage(canvas)` rasterizes the source canvas as 8-bit sRGB.
+- `drawImage(canvas)` rasterizes the source canvas as 8-bit sRGB. Measured on
+  `3.6.0`, two CPU `RGBAF32` `srgb-linear` canvases, source linear 0.002,
+  0.2001, 0.2003, 1.5: after `dst.drawImage(src)` they read back as 7/255,
+  124/255, 124/255, 1.0 (sRGB-encoded). Rec.2020 green becomes sRGB green.
+  `drawCanvas` keeps the values but ignores `globalAlpha`.
 - An unknown or unsupported colour space name silently becomes sRGB.
-- The `colorSpace` getters report every non-sRGB space as `"srgb-linear"`.
+- A canvas has no `colorSpace` or `colorType` getter, and `ImageData.colorSpace`
+  returns the string it was given, alias or not.
 - A change of only `colorType` between two exports can reuse a surface of the
   previous colour type.
 - The GPU engine cannot allocate float or 16-bit surfaces, and the export
@@ -48,8 +53,22 @@ the blend result.
   HDR values are not clipped before blending.
 - Given one unchanged canvas, when I export twice with different `colorSpace`
   or `colorType`, then each result equals the result from a fresh canvas.
-- Given a `RGBAF32` canvas A with an HDR value `2.0`, when I `drawImage(A)`
-  into a `RGBAF32` canvas B in the same space, then B has `2.0`.
+- Given a CPU `RGBAF32` `srgb-linear` canvas A with linear 0.002, 0.2001,
+  0.2003, 1.5, when I `drawImage(A)` into a `RGBAF32` or `RGBAF16` canvas B in
+  the same space, then B reads back the values of A within `1e-4` (`RGBAF16`:
+  within its half-float step).
+- Given a `rec2020-linear` canvas A with Rec.2020 green, when I `drawImage(A)`
+  into a `rec2020-linear` or a `srgb-linear` canvas B, then B holds linear
+  BT.709 (-0.5876, 1.1329, -0.1006) in `srgb-linear` terms.
+- Given `globalAlpha = 0.5`, when I `drawImage(A)`, then the drawn alpha is
+  halved. `globalCompositeOperation`, `filter`, shadows and the transform apply
+  as for any other image.
+- Given an `RGBA8888` canvas B, when I `drawImage(A)`, then B has 8-bit values.
+- The PR reports the time of a 1920x1080 `drawImage(canvas)` before and after.
+- Given a `RGBAF32` canvas, when I call `getImageData` with `colorType:
+  "RGBAF32"` and `colorSpace` `srgb-linear` or `rec2020-linear`, and then
+  `putImageData` with the result, then the values round-trip unclamped within
+  `1e-5`.
 - Given an export without `colorType` and `colorSpace`, then the output is
   `RGBA8888` `srgb`, as today.
 
@@ -147,7 +166,8 @@ to succeed, so that the output does not depend on the host.
   set only the output encoding, applied once when pixels are read or encoded.
   The page cache and the export surface cache are valid only for the same
   working space and colour type. `drawImage(canvas)` keeps the source canvas
-  working space and precision. `getImageData` follows the same rule.
+  working space and colour type (F32 included). `getImageData` follows the same
+  rule, and `putImageData` writes float `ImageData` unclamped.
 - R1: `toBuffer("raw")` converts to the requested `colorSpace` and
   `colorType`.
 - R2: `premultiplied` export option, default `false`.
@@ -155,7 +175,8 @@ to succeed, so that the output does not depend on the host.
   throws a `TypeError`. There is no silent sRGB fallback. The documented
   aliases stay accepted. An unknown `colorType` name also throws a
   `TypeError`.
-- R4: `colorSpace` getters return the canonical name of the actual space.
+- R4: New read-only `canvas.colorSpace` and `canvas.colorType` getters, and
+  `ImageData.colorSpace`, return the canonical name of the actual space.
 - R5: A change of the output `colorType` or `colorSpace` alone does not
   reuse a cached result that was encoded for other output options.
 - R6: In PQ and HLG, linear `1.0` maps to the SDR reference white of 203 nits
@@ -194,6 +215,9 @@ Session 2026-09-17:
   `colorSpace`. Export options set only the output encoding. Found while
   planning: the handover assumed this already, but the export options set the
   compositing surface.
+- Q (from the Studio session, handover C0 and C9): Must `drawImage(canvas)`
+  and float `ImageData` keep precision, gamut and range? A: Yes. Added to User
+  Story 0.
 - Q: What is the output encoding when the export gives no colour options?
   A: `RGBA8888` `srgb`, unchanged.
 
@@ -205,6 +229,9 @@ Session 2026-09-17:
   `hdrReferenceWhite`, nits, default 203.
 - Q: Do colour space aliases stay accepted? A: Yes. They read back as the
   canonical name.
+- Q: No getter reads a canvas colour space back. What reads back the canonical
+  name? A: New read-only `canvas.colorSpace` and `canvas.colorType` getters,
+  and `ImageData.colorSpace`.
 - Q: Does an unknown `colorType` name throw? A: Yes, a `TypeError`.
 - Q: Where do evidence commands run? A: In CI on the pushed branch
   (`test.yml` by `workflow_dispatch`, and `rust-ci.yml`). No local builds.

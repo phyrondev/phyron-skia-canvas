@@ -15,7 +15,11 @@ the recorder surface. It does not cover the output encoding (see
 | W2: `[0,0,0,0.5]` over `[2,2,2,1]` exports `1.0` in `srgb-linear` (no clip before blend) | Open | None | None | `tests/suite/color.test.js` "does not clip HDR before blending" |
 | W3: two exports of one unchanged canvas with different `colorSpace` or `colorType` equal the fresh-canvas results | Open | None | None | `tests/suite/color.test.js` "repeated exports ignore stale caches" |
 | W4: `getImageData` uses the working space for compositing | Open | None | None | `tests/suite/color.test.js` "getImageData composites in the working space" |
-| W5: `drawImage(canvasA)` into `RGBAF32` canvas B keeps HDR `2.0` | Open | None | None | `tests/suite/color.test.js` "drawImage of a canvas keeps HDR values" |
+| W5: `drawImage(canvasA)` into `RGBAF32` and `RGBAF16` canvas B keeps linear 0.002, 0.2001, 0.2003, 1.5 within `1e-4` (F16: its step) | Open | None | None | `tests/suite/color.test.js` "drawImage of a canvas keeps precision and range" |
+| W7: `drawImage(canvasA)` keeps Rec.2020 green into `rec2020-linear` and `srgb-linear` B | Open | None | None | `tests/suite/color.test.js` "drawImage of a canvas keeps gamut" |
+| W8: `drawImage(canvasA)` with `globalAlpha = 0.5` halves alpha; `RGBA8888` B has 8-bit values | Open | None | None | `tests/suite/color.test.js` "drawImage of a canvas applies globalAlpha" |
+| W9: float `getImageData` then `putImageData` round-trips within `1e-5` in `srgb-linear` and `rec2020-linear` | Open | None | None | `tests/suite/color.test.js` "float ImageData round trip" |
+| W10: 1920x1080 `drawImage(canvas)` time before and after is in the PR | Open | None | None | timing script output in the PR description |
 | W6: export without colour options returns `RGBA8888` `srgb` | Open | None | Existing `tests/suite/canvas.test.js` raw export tests | `just test` green in CI |
 
 ## Invariants

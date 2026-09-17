@@ -22,6 +22,10 @@ test confirms it.
   of 203 (decoder not recorded).
 - M4. The GPU engine throws `Could not allocate new WxH bitmap` for `RGBAF32`
   and `R16G16B16A16UNorm`.
+- M6. `drawImage(canvas)` between two CPU `RGBAF32` `srgb-linear` canvases:
+  source linear 0.002, 0.2001, 0.2003, 1.5 reads back as 7/255, 124/255,
+  124/255, 1.0 (sRGB-encoded). `drawCanvas` keeps the values and ignores
+  `globalAlpha`. (Measured by the Studio session, handover M5.)
 - M5. A float colour array acts as unpremultiplied: `[0.5,0.5,0.5,0.5]` over
   black gave linear `0.25`. `lib/index.d.ts` says premultiplied. Not in scope;
   recorded for a separate fix.
@@ -87,12 +91,23 @@ Check: `W = 203` gives `E' = 0.750` for white (BT.2408: 75%).
 
 ### Decision: `drawImage(canvas)` precision
 
-**Chosen**: `PageRecorder::get_image` uses the canvas working space and
-`BitDepth::F16` when the canvas colour type is not 8-bit.
+**Chosen**: `PageRecorder::get_image` rasterizes the source picture into a
+raster surface of the source canvas working colour type and colour space, and
+returns its snapshot. The destination then draws it as any other image, so
+`globalAlpha`, compositing, filters, shadows and sampling are unchanged.
 
-**Reason**: `images::deferred_from_picture` supports only `BitDepth::U8` and
-`BitDepth::F16`. F16 keeps HDR values up to 65504 and is enough for a
-compositing source.
+**Reason**: M6 below needs `1e-4` at 0.2001 against 0.2003. A half float has a
+step of about 2.4e-4 near 0.2, so F16 fails. `images::deferred_from_picture`
+supports only `BitDepth::U8` and `BitDepth::F16`, so it cannot produce F32.
+
+**Rejected Alternatives**
+
+- `deferred_from_picture` with `BitDepth::F16`: fails the precision criterion.
+- Draw the picture directly (as `drawCanvas` does): keeps values, but
+  `globalAlpha` and the image paths (sampling, shadows) would need a second
+  implementation.
+- Widest of source and destination colour type (handover C0): the source
+  cannot hold more than its own type, so the source type is enough.
 
 ### Decision: Name parsing owner
 

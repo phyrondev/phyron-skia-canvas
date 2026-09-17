@@ -94,8 +94,9 @@ tests/suite/color.test.js       new: contract tests
    - `raw` returns these bytes. PNG, JPEG and WebP encode a `Pixmap` of them
      (unpremul), tagged with the output `ColorSpace`, so the PNG `iCCP`
      behaviour stays.
-4. `PageRecorder::get_image` uses the working space, and `BitDepth::F16` for
-   non-8-bit working types.
+4. `PageRecorder::get_image` rasterizes the source picture into a raster
+   surface of the source working colour type and space, and returns the
+   snapshot. Float `putImageData` writes unclamped values.
 5. `to_color_space` and `to_color_type` return `Result<_, String>`; callers
    throw `TypeError`. `from_color_space` compares with the eight canonical
    spaces.
@@ -126,7 +127,7 @@ One commit each, test first in the same commit (no local runner).
 2. US2 colour names -> `color-names.md` N1-N4.
 3. PQ and HLG transfer module -> `raw-export.md` E8.
 4. US0 and US3 working space compositing and caches -> `working-space.md`
-   W1-W6.
+   W1-W10.
 5. US1 output encoding, `premultiplied`, `hdrReferenceWhite`, `getImageData`
    -> `raw-export.md` E1-E7.
 6. US4 GPU fallback -> `gpu-fallback.md` G1-G2.
