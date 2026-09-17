@@ -5,7 +5,7 @@
 // Contract tests for specs/001-wide-gamut-hdr-export.
 
 const { assert, describe, test } = require("../runner"),
-  { Canvas, ImageData } = require("../../lib");
+  { Canvas, ImageData, backend } = require("../../lib");
 
 const CANONICAL = [
     "srgb",
@@ -510,4 +510,41 @@ describe("Raw export encoding (contracts/raw-export.md)", () => {
       near(v, expected[ch], 1e-3, `ch${ch}`),
     );
   });
+});
+
+describe("GPU fallback (contracts/gpu-fallback.md)", () => {
+  // G1, G2
+  test(
+    "GPU engine falls back to CPU raster",
+    {
+      skip: backend().gpuAvailable
+        ? false
+        : "no GPU on this host; manual QA step 1 in quickstart.md is the evidence",
+    },
+    async () => {
+      const REC2020 = { colorType: "RGBAF32", colorSpace: "rec2020-linear" };
+      let canvas = new Canvas(1, 1, REC2020),
+        ctx = canvas.getContext("2d");
+      canvas.gpu = true;
+      ctx.fillStyle = [2, 2, 2, 1];
+      ctx.fillRect(0, 0, 1, 1);
+
+      let [r, g, b, a] = floats(await canvas.toBuffer("raw", REC2020));
+      [r, g, b].forEach((v) => near(v, 2, 1e-3));
+      near(a, 1, 1e-6);
+
+      let { renderer, fallback } = canvas.engine;
+      assert.equal(renderer, "GPU");
+      assert.ok(
+        fallback === undefined || fallback === "RGBAF32",
+        `fallback: ${fallback}`,
+      );
+
+      // an 8-bit export allocates on the GPU and clears the report
+      let rgba = new Canvas(1, 1);
+      rgba.gpu = true;
+      await rgba.toBuffer("raw", {});
+      assert.equal(rgba.engine.fallback, undefined);
+    },
+  );
 });

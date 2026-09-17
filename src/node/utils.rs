@@ -1268,6 +1268,7 @@ pub fn export_options_arg(
         jpeg_downsample,
         text_contrast,
         text_gamma,
+        ..ExportOptions::default()
     })
 }
 

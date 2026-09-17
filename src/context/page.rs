@@ -27,7 +27,9 @@ const CRC32: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
 
 use super::transfer::{self, HdrTransfer};
 use crate::{
-    canvas::BoxedCanvas, context::BoxedContext2D, gpu::RenderingEngine,
+    canvas::BoxedCanvas,
+    context::BoxedContext2D,
+    gpu::{FallbackCell, RenderingEngine},
 };
 
 static CACHE: OnceLock<Arc<DashMap<usize, PageCache>>> = OnceLock::new();
@@ -1078,6 +1080,8 @@ pub struct ExportOptions {
     pub premultiplied: bool,
     /// SDR reference white in nits for PQ and HLG output.
     pub hdr_reference_white: f32,
+    /// Where the GPU engine reports a CPU raster fallback.
+    pub fallback: FallbackCell,
     pub jpeg_downsample: bool,
     pub text_contrast: f32,
     pub text_gamma: f32,
@@ -1100,6 +1104,7 @@ impl Default for ExportOptions {
             working_color_space: ColorSpace::new_srgb(),
             premultiplied: false,
             hdr_reference_white: transfer::DEFAULT_REFERENCE_WHITE,
+            fallback: FallbackCell::default(),
             outline: true,
         }
     }

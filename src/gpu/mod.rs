@@ -2,8 +2,12 @@
 use crate::context::page::{ExportOptions, Page};
 use serde_json::{Value, json};
 use skia_safe::{
-    Color, Image, ImageInfo, Matrix, Rect, Surface, gpu::DirectContext,
-    surfaces,
+    Color, ColorType, Image, ImageInfo, Matrix, Rect, Surface,
+    gpu::DirectContext, surfaces,
+};
+use std::{
+    fmt,
+    sync::{Arc, Mutex},
 };
 
 #[cfg(feature = "metal")]
@@ -72,6 +76,37 @@ impl Default for RenderingEngine {
     }
 }
 
+/// Shared record of the colour type whose last surface fell back from the GPU
+/// to CPU raster. A canvas owns one and hands clones to its exports, which
+/// run on other threads.
+#[derive(Clone, Default)]
+pub struct FallbackCell(Arc<Mutex<Option<ColorType>>>);
+
+impl FallbackCell {
+    pub fn get(&self) -> Option<ColorType> {
+        self.0.lock().ok().and_then(|guard| *guard)
+    }
+
+    fn set(&self, color_type: Option<ColorType>) {
+        if let Ok(mut guard) = self.0.lock() {
+            *guard = color_type;
+        }
+    }
+}
+
+/// Export options compare equal whatever cell they report to.
+impl PartialEq for FallbackCell {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl fmt::Debug for FallbackCell {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("FallbackCell").field(&self.get()).finish()
+    }
+}
+
 #[allow(dead_code)]
 impl RenderingEngine {
     pub fn selectable(&self) -> bool {
@@ -86,19 +121,29 @@ impl RenderingEngine {
         image_info: &ImageInfo,
         opts: &ExportOptions,
     ) -> Result<Surface, String> {
+        let raster = || {
+            surfaces::raster(image_info, None, Some(&opts.surface_props()))
+                .ok_or(format!(
+                    "Could not allocate new {}×{} bitmap (color type: {:?})",
+                    image_info.width(),
+                    image_info.height(),
+                    image_info.color_type()
+                ))
+        };
         match self {
-            Self::GPU => Engine::make_surface(image_info, opts),
-            Self::CPU => surfaces::raster(
-                image_info,
-                None,
-                Some(&opts.surface_props()),
-            )
-            .ok_or(format!(
-                "Could not allocate new {}×{} bitmap (color type: {:?})",
-                image_info.width(),
-                image_info.height(),
-                image_info.color_type()
-            )),
+            // AIDEV-NOTE: a GPU may not allocate float or 16-bit surfaces
+            // (spec 001, contracts/gpu-fallback.md); render those with CPU
+            // raster and report it in `canvas.engine.fallback`.
+            Self::GPU => match Engine::make_surface(image_info, opts) {
+                Ok(surface) => {
+                    opts.fallback.set(None);
+                    Ok(surface)
+                }
+                Err(_) => raster().inspect(|_| {
+                    opts.fallback.set(Some(image_info.color_type()))
+                }),
+            },
+            Self::CPU => raster().inspect(|_| opts.fallback.set(None)),
         }
     }
 

@@ -20,6 +20,7 @@ pub struct Canvas {
     pub gpu_disabled: bool,
     pub color_type: ColorType,
     pub color_space: ColorSpace,
+    pub fallback: gpu::FallbackCell,
     engine: Option<gpu::RenderingEngine>,
 }
 
@@ -39,6 +40,7 @@ impl Canvas {
             gpu_disabled,
             color_type,
             color_space,
+            fallback: gpu::FallbackCell::default(),
             engine: None,
         }
     }
@@ -64,6 +66,7 @@ impl Canvas {
         ExportOptions {
             working_color_type: self.color_type,
             working_color_space: self.color_space.clone(),
+            fallback: self.fallback.clone(),
             ..opts
         }
     }
@@ -193,6 +196,9 @@ pub fn get_engine_status(mut cx: FunctionContext) -> JsResult<JsString> {
 
     let mut details = this.engine().status(this.gpu_disabled);
     details["textContrast"] = json!(this.text_contrast);
+    if let Some(color_type) = this.fallback.get() {
+        details["fallback"] = json!(from_color_type(color_type));
+    }
     details["textGamma"] = json!(this.text_gamma);
     Ok(cx.string(details.to_string()))
 }
