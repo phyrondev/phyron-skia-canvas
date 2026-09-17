@@ -2,9 +2,9 @@
 use neon::prelude::*;
 use skia_safe::{
     BlendMode, Canvas as SkCanvas, ClipOp, Color, Color4f,
-    ColorFilter as SkColorFilter, ColorSpace, Contains, FourByteTag, IRect,
-    Image, ImageFilter as SkImageFilter, MaskFilter as SkMaskFilter, Paint,
-    PaintStyle, Path, PathBuilder, PathFillType, PathOp, Picture,
+    ColorFilter as SkColorFilter, ColorSpace, ColorType, Contains, FourByteTag,
+    IRect, Image, ImageFilter as SkImageFilter, MaskFilter as SkMaskFilter,
+    Paint, PaintStyle, Path, PathBuilder, PathFillType, PathOp, Picture,
     PictureRecorder, Point, Rect, Shader as SkShader, Size,
     canvas::{SaveLayerRec, SrcRectConstraint::Strict},
     dash_path_effect,
@@ -19,6 +19,7 @@ use std::cell::RefCell;
 
 pub mod api;
 pub mod page;
+pub mod transfer;
 
 use crate::{
     font_library::FontLibrary,
@@ -47,6 +48,9 @@ pub struct Context2D {
     /// The canvas's working color space. Used to tag untagged colors (float
     /// arrays) so Skia can convert them during export to a different space.
     pub canvas_color_space: ColorSpace,
+    /// The canvas's working colour type. `drawImage` of this context's canvas
+    /// rasterizes at this type.
+    pub canvas_color_type: ColorType,
     recorder: RefCell<PageRecorder>,
     state: State,
     stack: Vec<State>,
@@ -242,12 +246,16 @@ impl State {
 }
 
 impl Context2D {
-    pub fn new(canvas_color_space: ColorSpace) -> Self {
+    pub fn new(
+        canvas_color_type: ColorType,
+        canvas_color_space: ColorSpace,
+    ) -> Self {
         let bounds = Rect::from_wh(300.0, 150.0);
 
         Context2D {
             bounds,
             canvas_color_space,
+            canvas_color_type,
             recorder: RefCell::new(PageRecorder::new(bounds)),
             path: PathBuilder::new(),
             stack: vec![],
@@ -721,7 +729,9 @@ impl Context2D {
     }
 
     pub fn get_image(&self) -> Option<Image> {
-        self.recorder.borrow_mut().get_image()
+        self.recorder
+            .borrow_mut()
+            .get_image(self.canvas_color_type, &self.canvas_color_space)
     }
 
     pub fn get_picture(&mut self) -> Option<Picture> {

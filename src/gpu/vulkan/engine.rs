@@ -21,7 +21,7 @@ use vulkano::{
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
 };
 
-use crate::context::page::ExportOptions;
+use crate::{context::page::ExportOptions, gpu::contexts_released};
 
 thread_local!(
     static VK_CONTEXT: RefCell<Option<VulkanContext>> =
@@ -100,7 +100,7 @@ impl VulkanEngine {
     fn spawn_idle_watcher() {
         // use a non-rayon thread so as not to compete with the worker threads
         std::thread::spawn(move || {
-            loop {
+            while !contexts_released() {
                 std::thread::sleep(Duration::from_secs(1));
                 rayon::spawn_broadcast(|_| {
                     // drop contexts that haven't been used in a while to free
@@ -120,7 +120,10 @@ impl VulkanEngine {
     where
         F: FnOnce(&mut VulkanContext) -> Result<T, String>,
     {
-        match VulkanEngine::supported() {
+        match !contexts_released() && VulkanEngine::supported() {
+            false if contexts_released() => {
+                Err("GPU contexts were released for process exit".to_string())
+            }
             false => Err("Vulkan API not supported".to_string()),
             true => VK_CONTEXT.with_borrow_mut(|local_ctx| {
                 local_ctx
@@ -131,6 +134,16 @@ impl VulkanEngine {
                     .and_then(|ctx| f(local_ctx.insert(ctx)))
             }),
         }
+    }
+
+    /// Drop the GPU context of every rayon worker, on its own thread, the way
+    /// the idle watcher does after the context lifespan. The calling thread's
+    /// context stays alive: surfaces that JS objects own (for example the
+    /// `getImageData` surface) belong to it and are freed during exit teardown.
+    pub fn release_contexts() {
+        rayon::broadcast(|_| {
+            VK_CONTEXT.with_borrow_mut(|cell| drop(cell.take()))
+        });
     }
 
     pub fn with_direct_context<F>(f: F)

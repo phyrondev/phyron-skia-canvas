@@ -24,6 +24,9 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # test images and fonts are Git LFS objects (.gitattributes)
+          lfs: true
 
       - name: Use Node.js ${{ matrix.node }}
         uses: actions/setup-node@v4

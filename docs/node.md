@@ -315,6 +315,57 @@ win.on("draw", (e) => {
 });
 ```
 
+### Wide gamut and HDR output
+
+Two settings control colour:
+
+- The canvas settings, `new Canvas(w, h, { colorType, colorSpace })`, set the
+  **working space**. All compositing, blending and antialiasing happens there,
+  and `drawImage(canvas)` keeps the source canvas's precision and gamut. The
+  default is `RGBA8888` in `srgb`.
+- The export options, `toBuffer(format, { colorType, colorSpace })` and
+  `getImageData(x, y, w, h, { colorType, colorSpace })`, set the **output
+  encoding**. The pixels are converted once, when they are read. The default is
+  `RGBA8888` in `srgb`.
+
+Set precision and gamut on the canvas. An 8-bit `srgb` canvas exported as
+`RGBAF32` in `display-p3` has 8-bit precision and the sRGB gamut.
+
+```js
+let canvas = new Canvas(1920, 1080, {
+  colorType: "RGBAF32",
+  colorSpace: "rec2020-linear",
+});
+let ctx = canvas.getContext("2d");
+ctx.fillStyle = [2, 2, 2, 1]; // linear light, 2x SDR reference white
+ctx.fillRect(0, 0, 1920, 1080);
+
+let hdr10 = await canvas.toBuffer("raw", {
+  colorType: "R16G16B16A16UNorm",
+  colorSpace: "rec2020-pq",
+  hdrReferenceWhite: 203, // nits for linear 1.0 (default)
+});
+```
+
+Colour spaces: `srgb`, `srgb-linear`, `display-p3`, `display-p3-linear`,
+`rec2020`, `rec2020-linear`, `rec2020-pq`, `rec2020-hlg`. The aliases `linear`,
+`p3`, `p3-linear`, `bt2020`, `bt2020-linear`, `hdr10` and `hlg` are accepted,
+and `canvas.colorSpace` reports the canonical name. An unknown colour space or
+colour type throws a `TypeError`.
+
+Export options:
+
+| Option | Formats | Effect |
+| --- | --- | --- |
+| `colorSpace` | `raw`, `png`, `jpg`, `webp`, `getImageData` | Output colour space. PNG embeds it as an ICC profile. |
+| `colorType` | `raw`, `png`, `getImageData` | Output colour type. PNG writes 16 bits per channel for 16-bit and float types. JPEG and WebP are always 8-bit. |
+| `premultiplied` | `raw`, `getImageData` | Multiply colour by alpha (default `false`). |
+| `hdrReferenceWhite` | `rec2020-pq`, `rec2020-hlg` | Nits for linear `1.0` (default 203, BT.2408). HLG assumes a 1000-nit display with system gamma 1.2. |
+
+With the GPU engine, a colour type that the GPU cannot allocate (for example
+`RGBAF32`) is rendered with CPU raster, and `canvas.engine.fallback` names that
+colour type.
+
 ### Integrating with [Sharp.js][sharp]
 
 ```js

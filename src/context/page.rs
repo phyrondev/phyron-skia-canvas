@@ -6,12 +6,12 @@ use little_exif::{
 use neon::prelude::*;
 use rayon::prelude::*;
 use skia_safe::{
-    AlphaType, Canvas as SkCanvas, ClipOp, Color, ColorSpace, ColorType,
+    AlphaType, Canvas as SkCanvas, ClipOp, Color, ColorSpace, ColorType, Data,
     Document, IRect, ISize, Image as SkImage, ImageInfo, Matrix, Path, Picture,
     PictureRecorder, PixelGeometry, Rect, Size, Surface, SurfaceProps,
     SurfacePropsFlags,
-    image::{BitDepth, CachingHint},
-    images, jpeg_encoder, pdf, png_encoder,
+    image::CachingHint,
+    images, jpeg_encoder, pdf, png_encoder, surfaces,
     svg::{self, canvas::Flags},
     webp_encoder,
 };
@@ -25,8 +25,11 @@ use std::{
 };
 const CRC32: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
 
+use super::transfer::{self, HdrTransfer};
 use crate::{
-    canvas::BoxedCanvas, context::BoxedContext2D, gpu::RenderingEngine,
+    canvas::BoxedCanvas,
+    context::BoxedContext2D,
+    gpu::{FallbackCell, RenderingEngine},
 };
 
 static CACHE: OnceLock<Arc<DashMap<usize, PageCache>>> = OnceLock::new();
@@ -119,27 +122,20 @@ impl PageRecorder {
     ) -> Result<Vec<u8>, String> {
         // return an empty buffer if the requested rect is entirely outside the
         // canvas
-        let dst_info = ImageInfo::new(
-            (crop.width(), crop.height()),
-            opts.color_type,
-            AlphaType::Unpremul,
-            opts.color_space.clone(),
-        );
-        let mut dst_buffer: Vec<u8> = vec![0; dst_info.compute_min_byte_size()];
         if !self.bounds.intersects(Rect::from_irect(crop)) {
-            return Ok(dst_buffer);
+            return Ok(vec![
+                0;
+                opts.output_info(
+                    crop.size(),
+                    opts.raw_alpha_type()
+                )
+                .compute_min_byte_size()
+            ]);
         }
 
         let page = self.get_page();
         self.surface.update(&page, &opts, &engine);
-
-        match self.surface.copy_pixels(&dst_info, crop, &mut dst_buffer) {
-            true => Ok(dst_buffer),
-            false => Err(format!(
-                "Could not get image data (format: {:?})",
-                dst_info.color_type()
-            )),
-        }
+        self.surface.copy_pixels(crop, &opts)
     }
 
     pub fn get_page(&mut self) -> Page {
@@ -190,19 +186,23 @@ impl PageRecorder {
         page
     }
 
-    pub fn get_image(&mut self) -> Option<SkImage> {
-        let size = self.bounds.size().to_floor();
-        self.get_page().get_picture(None).and_then(|pict| {
-            images::deferred_from_picture(
-                pict,
-                size,
-                None,
-                None,
-                BitDepth::U8,
-                Some(ColorSpace::new_srgb()),
-                None,
-            )
-        })
+    /// Rasterize the page for use as a `drawImage` source, in the canvas
+    /// working colour type and space so precision, gamut and range survive.
+    pub fn get_image(
+        &mut self,
+        color_type: ColorType,
+        color_space: &ColorSpace,
+    ) -> Option<SkImage> {
+        let info = ImageInfo::new(
+            self.bounds.size().to_floor(),
+            color_type,
+            AlphaType::Premul,
+            color_space.clone(),
+        );
+        let picture = self.get_page().get_picture(None)?;
+        let mut surface = surfaces::raster(&info, None, None)?;
+        surface.canvas().draw_picture(&picture, None, None);
+        Some(surface.image_snapshot())
     }
 }
 
@@ -222,6 +222,7 @@ pub struct RecordingSurface {
     matte: Option<Color>,
     msaa: Option<usize>,
     gpu: Option<bool>,
+    color_type: ColorType,
     color_space: ColorSpace,
     density: f32,
 }
@@ -234,6 +235,7 @@ impl Default for RecordingSurface {
             matte: None,
             msaa: None,
             gpu: None,
+            color_type: ColorType::RGBA8888,
             color_space: ColorSpace::new_srgb(),
             density: 0.0,
         }
@@ -253,7 +255,13 @@ impl RecordingSurface {
         let resized = self
             .surface
             .as_mut()
-            .map(|surface| surface.image_info().dimensions() != page_size)
+            .map(|surface| {
+                let info = surface.image_info();
+                info.dimensions() != page_size
+                    || info.color_type() != opts.working_color_type
+                    || info.color_space().as_ref()
+                        != Some(&opts.working_color_space)
+            })
             .unwrap_or(true);
 
         gpu_toggled || resized
@@ -263,7 +271,8 @@ impl RecordingSurface {
         self.density != opts.density
             || self.matte != opts.matte
             || self.msaa != opts.msaa
-            || self.color_space != opts.color_space
+            || self.color_type != opts.working_color_type
+            || self.color_space != opts.working_color_space
     }
 
     pub fn update(
@@ -279,7 +288,8 @@ impl RecordingSurface {
         // start from scratch if invalidated
         if reconfigure || recreate {
             self.gpu = Some(matches!(engine, RenderingEngine::GPU));
-            self.color_space = opts.color_space.clone();
+            self.color_type = opts.working_color_type;
+            self.color_space = opts.working_color_space.clone();
             self.density = opts.density;
             self.matte = opts.matte;
             self.msaa = opts.msaa;
@@ -291,9 +301,9 @@ impl RecordingSurface {
                 let page_size = page.scaled_dimensions(opts.density);
                 let img_info = ImageInfo::new(
                     page_size,
-                    opts.color_type,
+                    opts.working_color_type,
                     AlphaType::Premul,
-                    opts.color_space.clone(),
+                    opts.working_color_space.clone(),
                 );
                 self.surface = engine.make_surface(&img_info, opts).ok();
             }
@@ -342,23 +352,21 @@ impl RecordingSurface {
         }
     }
 
+    /// Read `crop` from the working surface in the output encoding of
+    /// `opts`.
     pub fn copy_pixels(
         &mut self,
-        dst_info: &ImageInfo,
-        src: IRect,
-        pixels: &mut [u8],
-    ) -> bool {
+        crop: IRect,
+        opts: &ExportOptions,
+    ) -> Result<Vec<u8>, String> {
         self.surface
             .as_mut()
-            .map(|surface| {
-                surface.read_pixels(
-                    dst_info,
-                    pixels,
-                    dst_info.min_row_bytes(),
-                    (src.x(), src.y()),
-                )
+            .ok_or_else(|| {
+                "Could not allocate a surface for getImageData".to_string()
             })
-            .unwrap_or(false)
+            .and_then(|surface| {
+                read_output(surface, crop, opts, opts.raw_alpha_type())
+            })
     }
 }
 
@@ -427,17 +435,17 @@ impl Page {
             quality,
             density,
             matte,
-            color_type,
-            ref color_space,
             ..
         } = options;
         let size = self.bounds.size();
         let img_dims = self.scaled_dimensions(density);
+        // composite in the canvas working space; the output encoding is
+        // applied once, when pixels are read or encoded
         let img_info = ImageInfo::new(
             img_dims,
-            color_type,
+            options.working_color_type,
             AlphaType::Premul,
-            color_space.clone(),
+            options.working_color_space.clone(),
         );
         let img_quality = ((quality * 100.0) as u32).clamp(0, 100);
         let img_scale = Matrix::scale((density, density)).into();
@@ -527,33 +535,42 @@ impl Page {
                     }
                 }
 
+                let full = IRect::from_size(img_dims);
+                if format == "raw" {
+                    return read_output(
+                        &mut surface,
+                        full,
+                        &options,
+                        options.raw_alpha_type(),
+                    );
+                }
+
+                // the encoders take the image in the output encoding
+                let image = match options.is_working_encoding() {
+                    true => image,
+                    false => {
+                        let info =
+                            options.output_info(img_dims, AlphaType::Unpremul);
+                        let pixels = read_output(
+                            &mut surface,
+                            full,
+                            &options,
+                            AlphaType::Unpremul,
+                        )?;
+                        images::raster_from_data(
+                            &info,
+                            Data::new_copy(&pixels),
+                            info.min_row_bytes(),
+                        )
+                        .ok_or(format!(
+                            "Could not convert to {:?} for {}",
+                            options.color_type, format
+                        ))?
+                    }
+                };
+
                 // handle image encoding
                 match format.as_str() {
-                    "raw" => {
-                        let dst_info = ImageInfo::new(
-                            img_dims,
-                            color_type,
-                            AlphaType::Unpremul,
-                            Some(ColorSpace::new_srgb()),
-                        );
-                        let mut buffer: Vec<u8> =
-                            vec![0; dst_info.compute_min_byte_size()];
-                        match surface.read_pixels(
-                            &dst_info,
-                            &mut buffer,
-                            dst_info.min_row_bytes(),
-                            (0, 0),
-                        ) {
-                            true => Some(buffer),
-                            false => {
-                                return Err(format!(
-                                    "Could not encode as {} ({:?})",
-                                    format, color_type
-                                ));
-                            }
-                        }
-                    }
-
                     "jpg" | "jpeg" => {
                         let jpg_opts = jpeg_encoder::Options {
                             quality: img_quality,
@@ -702,16 +719,16 @@ impl Page {
         let ExportOptions {
             density,
             matte,
-            color_type,
-            ref color_space,
+            working_color_type,
+            ref working_color_space,
             ..
         } = surface_options;
         let img_dims = self.scaled_dimensions(density);
         let img_info = ImageInfo::new(
             img_dims,
-            color_type,
+            working_color_type,
             AlphaType::Premul,
-            color_space.clone(),
+            working_color_space.clone(),
         );
         let img_scale = Matrix::scale((density, density)).into();
 
@@ -870,6 +887,8 @@ impl PageSequence {
 #[derive(Debug, Clone)]
 struct PageCache {
     image: Option<SkImage>,
+    color_type: ColorType,
+    color_space: ColorSpace,
     density: f32,
     matte: Option<Color>,
     msaa: Option<usize>,
@@ -880,6 +899,8 @@ impl Default for PageCache {
     fn default() -> Self {
         Self {
             image: None,
+            color_type: ColorType::RGBA8888,
+            color_space: ColorSpace::new_srgb(),
             depth: 0,
             density: 1.0,
             matte: None,
@@ -922,6 +943,8 @@ impl PageCache {
             if !cache.is_valid(opts) || depth > cache.depth {
                 *cache = Self {
                     image: Some(image),
+                    color_type: opts.working_color_type,
+                    color_space: opts.working_color_space.clone(),
                     density: opts.density,
                     matte: opts.matte,
                     msaa: opts.msaa,
@@ -997,6 +1020,8 @@ impl PageCache {
 
     pub fn is_valid(&self, opts: &ExportOptions) -> bool {
         self.density == opts.density
+            && self.color_type == opts.working_color_type
+            && self.color_space == opts.working_color_space
             && self.matte == opts.matte
             && self.msaa == opts.msaa
             && self.image.is_some()
@@ -1043,8 +1068,20 @@ pub struct ExportOptions {
     pub outline: bool,
     pub matte: Option<Color>,
     pub msaa: Option<usize>,
+    /// Output colour type.
     pub color_type: ColorType,
+    /// Output colour space.
     pub color_space: ColorSpace,
+    /// Compositing colour type (the canvas `colorType`).
+    pub working_color_type: ColorType,
+    /// Compositing colour space (the canvas `colorSpace`).
+    pub working_color_space: ColorSpace,
+    /// Premultiply colour by alpha in `raw` and `getImageData` output.
+    pub premultiplied: bool,
+    /// SDR reference white in nits for PQ and HLG output.
+    pub hdr_reference_white: f32,
+    /// Where the GPU engine reports a CPU raster fallback.
+    pub fallback: FallbackCell,
     pub jpeg_downsample: bool,
     pub text_contrast: f32,
     pub text_gamma: f32,
@@ -1063,6 +1100,11 @@ impl Default for ExportOptions {
             msaa: None,
             color_type: ColorType::RGBA8888,
             color_space: ColorSpace::new_srgb(),
+            working_color_type: ColorType::RGBA8888,
+            working_color_space: ColorSpace::new_srgb(),
+            premultiplied: false,
+            hdr_reference_white: transfer::DEFAULT_REFERENCE_WHITE,
+            fallback: FallbackCell::default(),
             outline: true,
         }
     }
@@ -1106,5 +1148,123 @@ impl ExportOptions {
 
     pub fn is_raster(&self) -> bool {
         self.format != "pdf" && self.format != "svg"
+    }
+
+    /// `true` when the output encoding equals the working space, so no
+    /// conversion is needed.
+    pub fn is_working_encoding(&self) -> bool {
+        self.color_type == self.working_color_type
+            && self.color_space == self.working_color_space
+    }
+
+    /// The output `ImageInfo` for `dimensions`.
+    pub fn output_info(
+        &self,
+        dimensions: impl Into<ISize>,
+        alpha_type: AlphaType,
+    ) -> ImageInfo {
+        ImageInfo::new(
+            dimensions,
+            self.color_type,
+            alpha_type,
+            self.color_space.clone(),
+        )
+    }
+
+    /// The alpha type of `raw` and `getImageData` output.
+    pub fn raw_alpha_type(&self) -> AlphaType {
+        match self.premultiplied {
+            true => AlphaType::Premul,
+            false => AlphaType::Unpremul,
+        }
+    }
+}
+
+/// Read `crop` from a working-space surface in the output encoding of `opts`.
+///
+/// SDR outputs are converted by Skia. PQ and HLG outputs are read as linear
+/// Rec.2020 floats and encoded by [`transfer`], because Skia supports only a
+/// fixed reference white and approximates PQ.
+fn read_output(
+    surface: &mut Surface,
+    crop: IRect,
+    opts: &ExportOptions,
+    alpha_type: AlphaType,
+) -> Result<Vec<u8>, String> {
+    let error = || format!("Could not read pixels as {:?}", opts.color_type);
+    let read = |surface: &mut Surface, info: &ImageInfo| {
+        let mut pixels = vec![0; info.compute_min_byte_size()];
+        match surface.read_pixels(
+            info,
+            &mut pixels,
+            info.min_row_bytes(),
+            (crop.x(), crop.y()),
+        ) {
+            true => Ok(pixels),
+            false => Err(error()),
+        }
+    };
+
+    match HdrTransfer::of(&opts.color_space) {
+        None => read(surface, &opts.output_info(crop.size(), alpha_type)),
+        Some(hdr) => {
+            let linear = transfer::rec2020_linear()
+                .ok_or("Skia cannot construct linear Rec.2020")?;
+            let float_info = |alpha_type| {
+                ImageInfo::new(
+                    crop.size(),
+                    ColorType::RGBAF32,
+                    alpha_type,
+                    linear.clone(),
+                )
+            };
+            let bytes = read(surface, &float_info(AlphaType::Unpremul))?;
+
+            let mut rgba: Vec<f32> = bytes
+                .chunks_exact(4)
+                .map(|b| f32::from_ne_bytes([b[0], b[1], b[2], b[3]]))
+                .collect();
+            hdr.encode(&mut rgba, opts.hdr_reference_white);
+            if alpha_type == AlphaType::Premul {
+                rgba.chunks_exact_mut(4).for_each(|pixel| {
+                    let alpha = pixel[3];
+                    pixel[..3].iter_mut().for_each(|c| *c *= alpha);
+                });
+            }
+            let bytes: Vec<u8> =
+                rgba.iter().flat_map(|v| v.to_ne_bytes()).collect();
+
+            // same space and alpha type on both sides: Skia converts only
+            // the colour type (clamp and quantization)
+            let encoded_info = float_info(alpha_type);
+            let dst_info = ImageInfo::new(
+                crop.size(),
+                opts.color_type,
+                alpha_type,
+                linear.clone(),
+            );
+            match opts.color_type {
+                ColorType::RGBAF32 => Ok(bytes),
+                _ => {
+                    let image = images::raster_from_data(
+                        &encoded_info,
+                        Data::new_copy(&bytes),
+                        encoded_info.min_row_bytes(),
+                    )
+                    .ok_or_else(error)?;
+                    let mut pixels = vec![0; dst_info.compute_min_byte_size()];
+                    match image.read_pixels(
+                        &dst_info,
+                        &mut pixels,
+                        dst_info.min_row_bytes(),
+                        (0, 0),
+                        CachingHint::Disallow,
+                    ) {
+                        true => Ok(pixels),
+                        false => Err(error()),
+                    }
+                }
+            }
+        }
     }
 }

@@ -137,11 +137,9 @@ impl ImageData {
         buffer: Data,
         width: f32,
         height: f32,
-        color_type: String,
-        color_space: String,
+        color_type: ColorType,
+        color_space: ColorSpace,
     ) -> Self {
-        let color_type = to_color_type(&color_type);
-        let color_space = to_color_space(&color_space);
         Self {
             buffer,
             width,
@@ -296,7 +294,7 @@ pub fn get_complete(mut cx: FunctionContext) -> JsResult<JsBoolean> {
 pub fn pixels(mut cx: FunctionContext) -> JsResult<JsValue> {
     let this = cx.argument::<BoxedImage>(0)?;
     let this = this.borrow_mut();
-    let (color_type, color_space) = image_data_settings_arg(&mut cx, 1);
+    let (color_type, color_space) = image_data_settings_arg(&mut cx, 1)?;
 
     let info = ImageInfo::new(
         this.content.size().to_floor(),

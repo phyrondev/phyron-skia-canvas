@@ -35,7 +35,10 @@ use skia_safe::{FourByteTag, Paint};
 pub fn new(mut cx: FunctionContext) -> JsResult<BoxedContext2D> {
     let parent = cx.argument::<BoxedCanvas>(1)?;
     let parent = parent.borrow();
-    let this = RefCell::new(Context2D::new(parent.color_space.clone()));
+    let this = RefCell::new(Context2D::new(
+        parent.color_type,
+        parent.color_space.clone(),
+    ));
 
     this.borrow_mut().reset_size((parent.width, parent.height));
     Ok(cx.boxed(this))
@@ -997,8 +1000,8 @@ pub fn getImageData(mut cx: FunctionContext) -> JsResult<JsBuffer> {
     let mut y = float_arg(&mut cx, 2, "y")?.floor();
     let mut w = float_arg(&mut cx, 3, "width")?.floor();
     let mut h = float_arg(&mut cx, 4, "height")?.floor();
-    let (color_type, color_space, matte, density, msaa) =
-        image_data_export_arg(&mut cx, 5);
+    let output = image_data_export_arg(&mut cx, 5)?;
+    let density = output.density;
     let parent = cx.argument::<BoxedCanvas>(6)?;
     let canvas = &mut parent.borrow_mut();
 
@@ -1012,13 +1015,11 @@ pub fn getImageData(mut cx: FunctionContext) -> JsResult<JsBuffer> {
         h *= -1.0;
     }
 
+    let defaults = canvas.export_options();
     let opts = ExportOptions {
-        matte,
-        density,
-        msaa,
-        color_type,
-        color_space,
-        ..canvas.export_options()
+        text_contrast: defaults.text_contrast,
+        text_gamma: defaults.text_gamma,
+        ..canvas.in_working_space(output)
     };
     let crop = Rect::from_point_and_size(
         (x * density, y * density),

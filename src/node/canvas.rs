@@ -20,6 +20,7 @@ pub struct Canvas {
     pub gpu_disabled: bool,
     pub color_type: ColorType,
     pub color_space: ColorSpace,
+    pub fallback: gpu::FallbackCell,
     engine: Option<gpu::RenderingEngine>,
 }
 
@@ -39,6 +40,7 @@ impl Canvas {
             gpu_disabled,
             color_type,
             color_space,
+            fallback: gpu::FallbackCell::default(),
             engine: None,
         }
     }
@@ -49,13 +51,23 @@ impl Canvas {
             .get_or_insert_with(gpu::RenderingEngine::default)
     }
 
+    /// Default export options: output encoding `RGBA8888` `srgb`, working
+    /// space from this canvas.
     pub fn export_options(&self) -> ExportOptions {
-        ExportOptions {
+        self.in_working_space(ExportOptions {
             text_contrast: self.text_contrast as _,
             text_gamma: self.text_gamma as _,
-            color_type: self.color_type,
-            color_space: self.color_space.clone(),
             ..Default::default()
+        })
+    }
+
+    /// `opts` with this canvas's colour type and space as the working space.
+    pub fn in_working_space(&self, opts: ExportOptions) -> ExportOptions {
+        ExportOptions {
+            working_color_type: self.color_type,
+            working_color_space: self.color_space.clone(),
+            fallback: self.fallback.clone(),
+            ..opts
         }
     }
 }
@@ -97,11 +109,9 @@ pub fn new(mut cx: FunctionContext) -> JsResult<BoxedCanvas> {
     }
 
     let gpu_enabled = bool_for_key(&mut cx, &opts, "gpu")?;
-    let color_type = opt_string_for_key(&mut cx, &opts, "colorType")
-        .map(|mode| to_color_type(&mode))
+    let color_type = opt_color_type_for_key(&mut cx, &opts, "colorType")?
         .unwrap_or(ColorType::RGBA8888);
-    let color_space = opt_string_for_key(&mut cx, &opts, "colorSpace")
-        .map(|mode| to_color_space(&mode))
+    let color_space = opt_color_space_for_key(&mut cx, &opts, "colorSpace")?
         .unwrap_or_else(ColorSpace::new_srgb);
     let this = RefCell::new(Canvas::new(
         text_contrast,
@@ -145,6 +155,21 @@ pub fn set_height(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     Ok(cx.undefined())
 }
 
+pub fn get_color_space(mut cx: FunctionContext) -> JsResult<JsString> {
+    let this = cx.argument::<BoxedCanvas>(0)?;
+    let name = from_color_space(&this.borrow().color_space);
+    match name {
+        Some(name) => Ok(cx.string(name)),
+        None => cx.throw_error("Canvas colour space has no canonical name"),
+    }
+}
+
+pub fn get_color_type(mut cx: FunctionContext) -> JsResult<JsString> {
+    let this = cx.argument::<BoxedCanvas>(0)?;
+    let name = from_color_type(this.borrow().color_type);
+    Ok(cx.string(name))
+}
+
 pub fn get_engine(mut cx: FunctionContext) -> JsResult<JsString> {
     let this = cx.argument::<BoxedCanvas>(0)?;
     let mut this = this.borrow_mut();
@@ -171,6 +196,9 @@ pub fn get_engine_status(mut cx: FunctionContext) -> JsResult<JsString> {
 
     let mut details = this.engine().status(this.gpu_disabled);
     details["textContrast"] = json!(this.text_contrast);
+    if let Some(color_type) = this.fallback.get() {
+        details["fallback"] = json!(from_color_type(color_type));
+    }
     details["textGamma"] = json!(this.text_gamma);
     Ok(cx.string(details.to_string()))
 }
@@ -178,6 +206,7 @@ pub fn get_engine_status(mut cx: FunctionContext) -> JsResult<JsString> {
 pub fn toBuffer(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let this = cx.argument::<BoxedCanvas>(0)?;
     let options = export_options_arg(&mut cx, 2)?;
+    let options = this.borrow().in_working_space(options);
     let mut pages = pages_arg(&mut cx, 1, &options, &this)?;
 
     // ensure cached bitmaps are sendable to other thread
@@ -207,6 +236,7 @@ pub fn toBuffer(mut cx: FunctionContext) -> JsResult<JsPromise> {
 pub fn toBufferSync(mut cx: FunctionContext) -> JsResult<JsValue> {
     let this = cx.argument::<BoxedCanvas>(0)?;
     let options = export_options_arg(&mut cx, 2)?;
+    let options = this.borrow().in_working_space(options);
     let pages = pages_arg(&mut cx, 1, &options, &this)?;
 
     let encoded = {
@@ -232,6 +262,7 @@ pub fn save(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let sequence = !cx.argument::<JsValue>(3)?.is_a::<JsUndefined, _>(&mut cx);
     let padding = opt_float_arg(&mut cx, 3).unwrap_or(-1.0);
     let options = export_options_arg(&mut cx, 4)?;
+    let options = this.borrow().in_working_space(options);
     let mut pages = pages_arg(&mut cx, 1, &options, &this)?;
 
     // ensure cached bitmaps are sendable to other thread
@@ -265,6 +296,7 @@ pub fn saveSync(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let sequence = !cx.argument::<JsValue>(3)?.is_a::<JsUndefined, _>(&mut cx);
     let padding = opt_float_arg(&mut cx, 3).unwrap_or(-1.0);
     let options = export_options_arg(&mut cx, 4)?;
+    let options = this.borrow().in_working_space(options);
     let pages = pages_arg(&mut cx, 1, &options, &this)?;
 
     let result = {

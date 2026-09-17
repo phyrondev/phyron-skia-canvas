@@ -201,11 +201,17 @@ interface ImageDataExportSettings {
   /** Number of samples used for antialising each pixel */
   msaa?: number | boolean;
 
-  /** Color space (must be "srgb") */
+  /** Output color space (defaults to "srgb") */
   colorSpace?: ColorSpace;
 
-  /** Color type to use when exporting in "raw" format */
+  /** Output color type (defaults to "rgba") */
   colorType?: ColorType;
+
+  /** Premultiply color by alpha (defaults to false) */
+  premultiplied?: boolean;
+
+  /** Nits for linear 1.0 in "rec2020-pq" and "rec2020-hlg" output (defaults to 203) */
+  hdrReferenceWhite?: number;
 }
 
 export class ImageData {
@@ -426,11 +432,23 @@ export interface ExportOptions extends RenderOptions {
   /** Optionally use 4:2:0 chroma subsampling (JPEG only) */
   downsample?: boolean;
 
-  /** Color type to use when exporting in "raw" format */
+  /**
+   * Output color type for "raw" and "png" (defaults to "RGBA8888"). Compositing
+   * uses the canvas colorType; the pixels are converted once at export.
+   */
   colorType?: ColorType;
 
-  /** Color space for the output image (defaults to "srgb") */
+  /**
+   * Output color space (defaults to "srgb"). Compositing uses the canvas
+   * colorSpace; the pixels are converted once at export.
+   */
   colorSpace?: ColorSpace;
+
+  /** Premultiply color by alpha in "raw" output (defaults to false) */
+  premultiplied?: boolean;
+
+  /** Nits for linear 1.0 in "rec2020-pq" and "rec2020-hlg" output (defaults to 203) */
+  hdrReferenceWhite?: number;
 }
 
 export interface SaveOptions extends ExportOptions {
@@ -445,6 +463,8 @@ export interface EngineDetails {
   driver?: string;
   threads: number;
   error?: string;
+  /** Color type of the last export that fell back from the GPU to CPU raster */
+  fallback?: ColorType;
 }
 
 export interface BackendInfo {
@@ -516,6 +536,10 @@ export class Canvas {
   get gpu(): boolean;
   set gpu(enabled: boolean);
   readonly engine: EngineDetails;
+  /** Working color type, set at construction */
+  readonly colorType: ColorType;
+  /** Working color space (canonical name), set at construction */
+  readonly colorSpace: ColorSpace;
 
   /** @deprecated Use {@link Canvas.toFile()} instead */
   saveAs(filename: string, options?: SaveOptions): Promise<void>;
