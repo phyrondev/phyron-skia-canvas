@@ -115,4 +115,5 @@ jobs:
           cargo test \
             --no-default-features \
             --features "freetype" \
+            --lib \
             --test native_api_contract

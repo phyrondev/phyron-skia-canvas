@@ -19,6 +19,7 @@ use std::cell::RefCell;
 
 pub mod api;
 pub mod page;
+pub mod transfer;
 
 use crate::{
     font_library::FontLibrary,
