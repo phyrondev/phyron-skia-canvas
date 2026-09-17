@@ -26,6 +26,23 @@ test confirms it.
   source linear 0.002, 0.2001, 0.2003, 1.5 reads back as 7/255, 124/255,
   124/255, 1.0 (sRGB-encoded). `drawCanvas` keeps the values and ignores
   `globalAlpha`. (Measured by the Studio session, handover M5.)
+- M7. Float colour arrays lose up to 1.7e-4 on linear canvases (0.2001 reads
+  back as 0.20009041, 1.5 as 1.4998322) and are exact on `srgb` canvases.
+  Cause: `SkPaint::setColor(SkColor4f, SkColorSpace*)` converts every paint
+  colour to sRGB (`src/core/SkPaint.cpp:123-128`, Skia m151), and drawing
+  converts it back with Skia's approximate transfer maths. `drawImage(canvas)`
+  and `putImageData` copy the result bit for bit. Not in scope; a fix would
+  pass solid colours as `SkShaders::Color(color4f, colorSpace)`. Gradients and
+  text colour are not measured.
+- M8. `drawImage(ImageData)` with `filter = "blur(...)"` blurs unpremultiplied
+  colour: edge colour darkens where alpha falls (green 1.27 instead of 1.5 at
+  alpha 0.35). `drawImage(canvas)` is correct (deviation 4.8e-7). The
+  `ImageData` draw path is unchanged by this spec. Not in scope.
+- M9. `tests/suite/canvas.test.js` crashes (`SIGSEGV`, once `SIGABRT`) when
+  the suite runs in parallel: `main` (`aeadf2d`) 4 of 5 runs, this branch 3 of
+  5 runs, dev builds, Vulkan GPU host. Pre-existing; alone it passes.
+- M10. 1920x1080 `drawImage(canvas)` plus raw readback, CPU, dev builds,
+  median of 7: `main` 2662 ms, branch 791 ms. `3.6.0` release build: 97 ms.
 - M5. A float colour array acts as unpremultiplied: `[0.5,0.5,0.5,0.5]` over
   black gave linear `0.25`. `lib/index.d.ts` says premultiplied. Not in scope;
   recorded for a separate fix.

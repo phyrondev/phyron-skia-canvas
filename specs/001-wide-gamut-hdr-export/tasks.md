@@ -52,6 +52,7 @@ covers.
   precision).
 - [ ] T013a Float `putImageData`: check `src/context/api.rs` `putImageData`
   keeps unclamped values; fix if not (W9).
+- [x] T013c W11-W13 tests (requested by the Studio session).
 - [ ] T013b Timing script for 1920x1080 `drawImage(canvas)`, run against
   `3.6.0` and the branch build (W10).
 

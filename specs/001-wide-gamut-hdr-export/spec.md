@@ -65,6 +65,16 @@ the blend result.
   as for any other image.
 - Given an `RGBA8888` canvas B, when I `drawImage(A)`, then B has 8-bit values.
 - The PR reports the time of a 1920x1080 `drawImage(canvas)` before and after.
+- Given a `RGBAF32` `srgb-linear` canvas with `[1,1,1,0.5]` over `[0,0,0,1]`,
+  when I export `RGBA8888` `srgb` raw or PNG, or draw it into an `RGBA8888`
+  `srgb` canvas and call `getImageData`, then the value is 188 (linear blend),
+  not 128 (reported by the Studio session).
+- Given `globalCompositeOperation` `lighter`, `multiply` or `destination-in`,
+  a shadow, or `filter = "blur(2px)"`, when I `drawImage(canvas)` between
+  float canvases, then the result matches a premultiplied composite of the
+  source pixels.
+- Given a GPU `RGBAF32` source canvas, when I `drawImage` it into a CPU
+  `RGBAF32` canvas, then extended values and alpha survive.
 - Given a `RGBAF32` canvas, when I call `getImageData` with `colorType:
   "RGBAF32"` and `colorSpace` `srgb-linear` or `rec2020-linear`, and then
   `putImageData` with the result, then the values round-trip unclamped within

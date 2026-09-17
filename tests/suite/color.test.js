@@ -5,7 +5,7 @@
 // Contract tests for specs/001-wide-gamut-hdr-export.
 
 const { assert, describe, test } = require("../runner"),
-  { Canvas, ImageData, backend } = require("../../lib");
+  { Canvas, ImageData, backend, loadImage } = require("../../lib");
 
 const CANONICAL = [
     "srgb",
@@ -547,6 +547,139 @@ describe("GPU fallback (contracts/gpu-fallback.md)", () => {
       rgba.gpu = true;
       await rgba.toBuffer("raw", {});
       assert.equal(rgba.engine.fallback, undefined);
+    },
+  );
+});
+
+describe("Studio compositing paths (contracts/working-space.md W11-W13)", () => {
+  const halfWhiteOverBlack = () => {
+      let canvas = cpuCanvas(2, 2, LINEAR_F32),
+        ctx = canvas.getContext("2d");
+      ctx.fillStyle = [0, 0, 0, 1];
+      ctx.fillRect(0, 0, 2, 2);
+      ctx.fillStyle = [1, 1, 1, 0.5];
+      ctx.fillRect(0, 0, 2, 2);
+      return canvas;
+    },
+    LINEAR_HALF = Math.round(srgbEncode(0.5) * 255); // 188; a gamma blend gives 128
+
+  // W11
+  test("8-bit sRGB output of a float linear canvas blends linearly", async () => {
+    assert.equal(LINEAR_HALF, 188);
+
+    let [r] = Array.from(
+      await halfWhiteOverBlack().toBuffer("raw", {
+        colorType: "RGBA8888",
+        colorSpace: "srgb",
+      }),
+    );
+    assert.equal(r, LINEAR_HALF, "raw RGBA8888");
+
+    let png = await loadImage(await halfWhiteOverBlack().toBuffer("png")),
+      decoded = cpuCanvas(2, 2),
+      dctx = decoded.getContext("2d");
+    dctx.drawImage(png, 0, 0);
+    near(dctx.getImageData(0, 0, 1, 1).data[0], LINEAR_HALF, 1, "png");
+
+    let rgba = cpuCanvas(2, 2),
+      ctx = rgba.getContext("2d");
+    ctx.drawImage(halfWhiteOverBlack(), 0, 0);
+    near(ctx.getImageData(0, 0, 1, 1).data[0], LINEAR_HALF, 1, "getImageData");
+  });
+
+  // W12
+  test("drawImage of a canvas composites like a plain image source", async () => {
+    const W = 16,
+      scene = (ctx) => {
+        ctx.fillStyle = [0.1, 0.4, 0.8, 1];
+        ctx.fillRect(0, 0, W, W);
+        ctx.fillStyle = [2, 0.5, 0.25, 0.75];
+        ctx.fillRect(4, 4, 8, 8);
+      },
+      variants = {
+        lighter: (ctx) => (ctx.globalCompositeOperation = "lighter"),
+        multiply: (ctx) => (ctx.globalCompositeOperation = "multiply"),
+        "destination-in": (ctx) =>
+          (ctx.globalCompositeOperation = "destination-in"),
+        shadow: (ctx) => {
+          ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
+          ctx.shadowBlur = 3;
+          ctx.shadowOffsetX = 2;
+          ctx.shadowOffsetY = 2;
+        },
+      };
+
+    let src = cpuCanvas(W, W, LINEAR_F32),
+      sctx = src.getContext("2d");
+    sctx.fillStyle = [0.5, 1.5, 0.25, 0.5];
+    sctx.fillRect(2, 2, 10, 10);
+    let plain = sctx.getImageData(0, 0, W, W, LINEAR_F32);
+
+    for (const [name, setup] of Object.entries(variants)) {
+      let render = async (source) => {
+        let dst = cpuCanvas(W, W, LINEAR_F32),
+          ctx = dst.getContext("2d");
+        scene(ctx);
+        setup(ctx);
+        ctx.drawImage(source, 0, 0);
+        return floats(await dst.toBuffer("raw", LINEAR_F32));
+      };
+      let fromCanvas = await render(src),
+        fromImageData = await render(plain),
+        worst = fromCanvas.reduce(
+          (max, v, i) => Math.max(max, Math.abs(v - fromImageData[i])),
+          0,
+        );
+      assert.ok(worst <= 1e-3, `${name}: max difference ${worst}`);
+    }
+
+    // Blur: drawImage(ImageData) blurs unpremultiplied colour (edges darken),
+    // so it is no reference. A premultiplied blur of a uniform colour keeps
+    // the unpremultiplied colour wherever alpha is not ~0.
+    let blurred = cpuCanvas(W, W, LINEAR_F32),
+      bctx = blurred.getContext("2d");
+    bctx.filter = "blur(2px)";
+    bctx.drawImage(src, 0, 0);
+    let values = floats(await blurred.toBuffer("raw", LINEAR_F32)),
+      centre = (7 * W + 7) * 4,
+      colour = floats(await src.toBuffer("raw", LINEAR_F32)).slice(
+        centre,
+        centre + 3,
+      ),
+      edges = 0;
+    // measured worst deviation: 4.8e-7
+    for (let i = 0; i < values.length; i += 4) {
+      if (values[i + 3] < 0.01) continue;
+      edges += values[i + 3] < 0.49 ? 1 : 0;
+      colour.forEach((v, ch) =>
+        near(values[i + ch], v, 1e-5, `blur px${i / 4} ch${ch}`),
+      );
+    }
+    assert.ok(edges > 0, "blur produced partially transparent edge pixels");
+  });
+
+  // W13
+  test(
+    "drawImage from a GPU canvas into a CPU float canvas keeps extended values",
+    {
+      skip: backend().gpuAvailable
+        ? false
+        : "no GPU on this host; run on a GPU host",
+    },
+    async () => {
+      const REC2020 = { colorType: "RGBAF32", colorSpace: "rec2020-linear" };
+      let src = new Canvas(1, 1, REC2020),
+        sctx = src.getContext("2d");
+      src.gpu = true;
+      sctx.fillStyle = [0, 1, 0, 0.5];
+      sctx.fillRect(0, 0, 1, 1);
+
+      let dst = cpuCanvas(1, 1, LINEAR_F32);
+      dst.getContext("2d").drawImage(src, 0, 0);
+      let [r, g, b, a] = floats(await dst.toBuffer("raw", LINEAR_F32)),
+        expected = mul3(REC2020_TO_709, [0, 1, 0]);
+      [r, g, b].forEach((v, i) => near(v, expected[i], 1e-3, `ch${i}`));
+      near(a, 0.5, 1e-4, "alpha");
     },
   );
 });

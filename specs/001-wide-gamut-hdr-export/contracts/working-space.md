@@ -20,6 +20,9 @@ the recorder surface. It does not cover the output encoding (see
 | W8: `drawImage(canvasA)` with `globalAlpha = 0.5` halves alpha; `RGBA8888` B has 8-bit values | Open | None | None | `tests/suite/color.test.js` "drawImage of a canvas applies globalAlpha" |
 | W9: float `getImageData` then `putImageData` round-trips within `1e-5` in `srgb-linear` and `rec2020-linear` | Open | None | None | `tests/suite/color.test.js` "float ImageData round trip" |
 | W10: 1920x1080 `drawImage(canvas)` time before and after is in the PR | Open | None | None | timing script output in the PR description |
+| W11: 8-bit `srgb` output of a `RGBAF32` `srgb-linear` canvas blends linearly (188, not 128) for raw `RGBA8888`, PNG, and `getImageData` after `drawImage` into an `RGBA8888` canvas | Open | None | None | `tests/suite/color.test.js` "8-bit sRGB output of a float linear canvas blends linearly" |
+| W12: `drawImage(canvas)` with `lighter`, `multiply`, `destination-in` and a shadow equals the same drawing from a float `ImageData` within `1e-3`; with `blur(2px)` the unpremultiplied colour stays the source colour within `1e-5` | Open | None | None | `tests/suite/color.test.js` "drawImage of a canvas composites like a plain image source" |
+| W13: `drawImage` from a GPU `RGBAF32` canvas into a CPU `RGBAF32` canvas keeps Rec.2020 green and alpha 0.5 | Open | None | None | `tests/suite/color.test.js` "drawImage from a GPU canvas into a CPU float canvas keeps extended values" (skipped without GPU) |
 | W6: export without colour options returns `RGBA8888` `srgb` | Open | None | Existing `tests/suite/canvas.test.js` raw export tests | `just test` green in CI |
 
 ## Invariants
