@@ -941,7 +941,15 @@ pub fn image_data_arg(
     let width = float_for_key(cx, &obj, "width")?;
     let height = float_for_key(cx, &obj, "height")?;
     let color_type = string_for_key(cx, &obj, "colorType")?;
+    let color_type = match to_color_type(&color_type) {
+        Ok(color_type) => color_type,
+        Err(msg) => return cx.throw_type_error(msg),
+    };
     let color_space = string_for_key(cx, &obj, "colorSpace")?;
+    let color_space = match to_color_space(&color_space) {
+        Ok(space) => space,
+        Err(msg) => return cx.throw_type_error(msg),
+    };
     let js_buffer: Handle<JsBuffer> = obj.get(cx, "data")?;
     let buffer = Data::new_copy(js_buffer.as_slice(cx));
 
@@ -957,45 +965,60 @@ pub fn image_data_arg(
 pub fn image_data_settings_arg(
     cx: &mut FunctionContext,
     idx: usize,
-) -> (ColorType, ColorSpace) {
+) -> NeonResult<(ColorType, ColorSpace)> {
     match opt_object_arg(cx, idx) {
-        Some(obj) => {
-            let color_type = opt_string_for_key(cx, &obj, "colorType")
-                .unwrap_or("rgba".to_string());
-            let color_space = opt_string_for_key(cx, &obj, "colorSpace")
-                .unwrap_or("srgb".to_string());
-            (to_color_type(&color_type), to_color_space(&color_space))
-        }
-        None => (ColorType::RGBA8888, ColorSpace::new_srgb()),
+        Some(obj) => Ok((
+            opt_color_type_for_key(cx, &obj, "colorType")?
+                .unwrap_or(ColorType::RGBA8888),
+            opt_color_space_for_key(cx, &obj, "colorSpace")?
+                .unwrap_or_else(ColorSpace::new_srgb),
+        )),
+        None => Ok((ColorType::RGBA8888, ColorSpace::new_srgb())),
     }
 }
 
 pub fn image_data_export_arg(
     cx: &mut FunctionContext,
     idx: usize,
-) -> (ColorType, ColorSpace, Option<Color>, f32, Option<usize>) {
+) -> NeonResult<(ColorType, ColorSpace, Option<Color>, f32, Option<usize>)> {
     match opt_object_arg(cx, idx) {
         Some(obj) => {
-            let color_type = opt_string_for_key(cx, &obj, "colorType")
-                .unwrap_or("rgba".to_string());
-            let color_space = opt_string_for_key(cx, &obj, "colorSpace")
-                .unwrap_or("srgb".to_string());
+            let color_type = opt_color_type_for_key(cx, &obj, "colorType")?
+                .unwrap_or(ColorType::RGBA8888);
+            let color_space = opt_color_space_for_key(cx, &obj, "colorSpace")?
+                .unwrap_or_else(ColorSpace::new_srgb);
             let matte = opt_color_for_key(cx, &obj, "matte");
             let density = opt_float_for_key(cx, &obj, "density").unwrap_or(1.0);
             let msaa = opt_float_for_key(cx, &obj, "msaa").map(|n| n as usize);
-            (
-                to_color_type(&color_type),
-                to_color_space(&color_space),
-                matte,
-                density,
-                msaa,
-            )
+            Ok((color_type, color_space, matte, density, msaa))
         }
-        None => (ColorType::RGBA8888, ColorSpace::new_srgb(), None, 1.0, None),
+        None => Ok((
+            ColorType::RGBA8888,
+            ColorSpace::new_srgb(),
+            None,
+            1.0,
+            None,
+        )),
     }
 }
 
-pub fn to_color_space(mode_name: &str) -> ColorSpace {
+/// Canonical colour space names. `from_color_space` reports only these.
+pub const COLOR_SPACE_NAMES: [&str; 8] = [
+    "srgb",
+    "srgb-linear",
+    "display-p3",
+    "display-p3-linear",
+    "rec2020",
+    "rec2020-linear",
+    "rec2020-pq",
+    "rec2020-hlg",
+];
+
+/// Parse a canonical colour space name or one of its aliases.
+///
+/// Fails for an unknown name and for a name that Skia cannot construct. There
+/// is no fallback space.
+pub fn to_color_space(name: &str) -> Result<ColorSpace, String> {
     use skia_safe::{named_primaries, named_transfer_fn};
 
     // CICP primaries
@@ -1009,69 +1032,144 @@ pub fn to_color_space(mode_name: &str) -> ColorSpace {
     let t_pq = named_transfer_fn::CicpId::PQ; // PQ (HDR10)
     let t_hlg = named_transfer_fn::CicpId::HLG; // HLG
 
-    match mode_name {
-        "srgb-linear" | "linear" => ColorSpace::new_srgb_linear(),
+    // outer `None`: unknown name; inner `None`: Skia could not construct it
+    let space = match name {
+        "srgb" => Some(Some(ColorSpace::new_srgb())),
+        "srgb-linear" | "linear" => Some(Some(ColorSpace::new_srgb_linear())),
 
         // Display P3 (wide gamut, used by Apple devices)
-        "display-p3" | "p3" => ColorSpace::new_cicp(p_p3, t_srgb)
-            .unwrap_or_else(ColorSpace::new_srgb),
+        "display-p3" | "p3" => Some(ColorSpace::new_cicp(p_p3, t_srgb)),
         "display-p3-linear" | "p3-linear" => {
-            ColorSpace::new_cicp(p_p3, t_linear)
-                .unwrap_or_else(ColorSpace::new_srgb_linear)
+            Some(ColorSpace::new_cicp(p_p3, t_linear))
         }
 
         // Rec. 2020 (wide gamut for UHD/HDR)
-        "rec2020" | "bt2020" => ColorSpace::new_cicp(p_2020, t_709)
-            .unwrap_or_else(ColorSpace::new_srgb),
+        "rec2020" | "bt2020" => Some(ColorSpace::new_cicp(p_2020, t_709)),
         "rec2020-linear" | "bt2020-linear" => {
-            ColorSpace::new_cicp(p_2020, t_linear)
-                .unwrap_or_else(ColorSpace::new_srgb_linear)
+            Some(ColorSpace::new_cicp(p_2020, t_linear))
         }
 
         // HDR transfer functions with Rec.2020 gamut
-        "rec2020-pq" | "hdr10" => ColorSpace::new_cicp(p_2020, t_pq)
-            .unwrap_or_else(ColorSpace::new_srgb),
-        "rec2020-hlg" | "hlg" => ColorSpace::new_cicp(p_2020, t_hlg)
-            .unwrap_or_else(ColorSpace::new_srgb),
+        "rec2020-pq" | "hdr10" => Some(ColorSpace::new_cicp(p_2020, t_pq)),
+        "rec2020-hlg" | "hlg" => Some(ColorSpace::new_cicp(p_2020, t_hlg)),
 
-        // Default: sRGB
-        _ => ColorSpace::new_srgb(),
+        _ => None,
+    };
+
+    space
+        .ok_or_else(|| {
+            format!(
+                "Unknown colorSpace \"{name}\" (expected one of: {})",
+                COLOR_SPACE_NAMES.join(", ")
+            )
+        })?
+        .ok_or_else(|| format!("Skia cannot construct colorSpace \"{name}\""))
+}
+
+/// The canonical name of `color_space`, or `None` if it is not one of the
+/// spaces in [`COLOR_SPACE_NAMES`].
+pub fn from_color_space(color_space: &ColorSpace) -> Option<&'static str> {
+    COLOR_SPACE_NAMES.into_iter().find(|name| {
+        to_color_space(name).is_ok_and(|space| &space == color_space)
+    })
+}
+
+/// `colorSpaceName(name)`: the canonical name for a colour space name or
+/// alias. Throws a `TypeError` for an unknown name.
+pub fn color_space_name(mut cx: FunctionContext) -> JsResult<JsString> {
+    let name = string_arg(&mut cx, 0, "colorSpace")?;
+    let canonical = to_color_space(&name)
+        .map(|space| from_color_space(&space));
+    match canonical {
+        Ok(Some(canonical)) => Ok(cx.string(canonical)),
+        Ok(None) => cx.throw_error(format!(
+            "colorSpace \"{name}\" has no canonical name"
+        )),
+        Err(msg) => cx.throw_type_error(msg),
     }
 }
 
-pub fn from_color_space(color_space: &ColorSpace) -> String {
-    match color_space.is_srgb() {
-        true => "srgb",
-        false => "srgb-linear", // linear or other non-sRGB spaces
+/// Colour type names accepted from JS, including the lowercase aliases.
+const COLOR_TYPE_NAMES: [(&str, ColorType); 25] = [
+    ("Alpha8", ColorType::Alpha8),
+    ("RGB565", ColorType::RGB565),
+    ("ARGB4444", ColorType::ARGB4444),
+    ("RGBA8888", ColorType::RGBA8888),
+    ("rgba", ColorType::RGBA8888),
+    ("RGB888x", ColorType::RGB888x),
+    ("rgb", ColorType::RGB888x),
+    ("BGRA8888", ColorType::BGRA8888),
+    ("bgra", ColorType::BGRA8888),
+    ("RGBA1010102", ColorType::RGBA1010102),
+    ("BGRA1010102", ColorType::BGRA1010102),
+    ("RGB101010x", ColorType::RGB101010x),
+    ("BGR101010x", ColorType::BGR101010x),
+    ("Gray8", ColorType::Gray8),
+    ("RGBAF16Norm", ColorType::RGBAF16Norm),
+    ("RGBAF16", ColorType::RGBAF16),
+    ("RGBAF32", ColorType::RGBAF32),
+    ("R8G8UNorm", ColorType::R8G8UNorm),
+    ("A16Float", ColorType::A16Float),
+    ("R16G16Float", ColorType::R16G16Float),
+    ("A16UNorm", ColorType::A16UNorm),
+    ("R16G16UNorm", ColorType::R16G16UNorm),
+    ("R16G16B16A16UNorm", ColorType::R16G16B16A16UNorm),
+    ("SRGBA8888", ColorType::SRGBA8888),
+    ("R8UNorm", ColorType::R8UNorm),
+];
+
+/// Parse a colour type name. Fails for an unknown name; there is no fallback
+/// type.
+pub fn to_color_type(name: &str) -> Result<ColorType, String> {
+    match name {
+        "N32" => Ok(ColorType::N32),
+        _ => COLOR_TYPE_NAMES
+            .iter()
+            .find(|(known, _)| *known == name)
+            .map(|(_, color_type)| *color_type)
+            .ok_or_else(|| {
+                let names: Vec<&str> = COLOR_TYPE_NAMES
+                    .iter()
+                    .map(|(known, _)| *known)
+                    .chain(["N32"])
+                    .collect();
+                format!(
+                    "Unknown colorType \"{name}\" (expected one of: {})",
+                    names.join(", ")
+                )
+            }),
     }
-    .to_string()
 }
 
-pub fn to_color_type(type_name: &str) -> ColorType {
-    match type_name {
-        "Alpha8" => ColorType::Alpha8,
-        "RGB565" => ColorType::RGB565,
-        "ARGB4444" => ColorType::ARGB4444,
-        "RGBA1010102" => ColorType::RGBA1010102,
-        "BGRA1010102" => ColorType::BGRA1010102,
-        "RGB101010x" => ColorType::RGB101010x,
-        "BGR101010x" => ColorType::BGR101010x,
-        "Gray8" => ColorType::Gray8,
-        "RGBAF16Norm" => ColorType::RGBAF16Norm,
-        "RGBAF16" => ColorType::RGBAF16,
-        "RGBAF32" => ColorType::RGBAF32,
-        "R8G8UNorm" => ColorType::R8G8UNorm,
-        "A16Float" => ColorType::A16Float,
-        "R16G16Float" => ColorType::R16G16Float,
-        "A16UNorm" => ColorType::A16UNorm,
-        "R16G16UNorm" => ColorType::R16G16UNorm,
-        "R16G16B16A16UNorm" => ColorType::R16G16B16A16UNorm,
-        "SRGBA8888" => ColorType::SRGBA8888,
-        "R8UNorm" => ColorType::R8UNorm,
-        "N32" => ColorType::N32,
-        "RGB888x" | "rgb" => ColorType::RGB888x,
-        "BGRA8888" | "bgra" => ColorType::BGRA8888,
-        _ => ColorType::RGBA8888,
+/// Read an optional `colorSpace`-style key; throw a `TypeError` for an invalid
+/// name.
+pub fn opt_color_space_for_key(
+    cx: &mut FunctionContext,
+    obj: &Handle<JsObject>,
+    attr: &str,
+) -> NeonResult<Option<ColorSpace>> {
+    match opt_string_for_key(cx, obj, attr) {
+        Some(name) => match to_color_space(&name) {
+            Ok(space) => Ok(Some(space)),
+            Err(msg) => cx.throw_type_error(msg),
+        },
+        None => Ok(None),
+    }
+}
+
+/// Read an optional `colorType`-style key; throw a `TypeError` for an invalid
+/// name.
+pub fn opt_color_type_for_key(
+    cx: &mut FunctionContext,
+    obj: &Handle<JsObject>,
+    attr: &str,
+) -> NeonResult<Option<ColorType>> {
+    match opt_string_for_key(cx, obj, attr) {
+        Some(name) => match to_color_type(&name) {
+            Ok(color_type) => Ok(Some(color_type)),
+            Err(msg) => cx.throw_type_error(msg),
+        },
+        None => Ok(None),
     }
 }
 
@@ -1125,15 +1223,13 @@ pub fn export_options_arg(
     let matte = opt_color_for_key(cx, &opts, "matte");
     let msaa =
         opt_float_for_key(cx, &opts, "msaa").map(|num| num.floor() as usize);
-    let color_type = opt_string_for_key(cx, &opts, "colorType")
-        .map(|mode| to_color_type(&mode))
+    let color_type = opt_color_type_for_key(cx, &opts, "colorType")?
         .unwrap_or(ColorType::RGBA8888);
     let text_contrast = float_for_key(cx, &opts, "textContrast")?;
     let text_gamma = float_for_key(cx, &opts, "textGamma")?;
     let outline = bool_for_key(cx, &opts, "outline")?;
 
-    let color_space = opt_string_for_key(cx, &opts, "colorSpace")
-        .map(|s| to_color_space(&s))
+    let color_space = opt_color_space_for_key(cx, &opts, "colorSpace")?
         .unwrap_or_else(ColorSpace::new_srgb);
 
     Ok(ExportOptions {

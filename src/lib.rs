@@ -440,11 +440,14 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     // --------------------------------------------------------------------
 
     cx.export_function("backend", backend)?;
+    cx.export_function("colorSpaceName", utils::color_space_name)?;
 
     // -- Canvas ------------------------------------------------------------------------------------
 
     cx.export_function("Canvas_new", canvas::new)?;
 
+    cx.export_function("Canvas_get_colorSpace", canvas::get_color_space)?;
+    cx.export_function("Canvas_get_colorType", canvas::get_color_type)?;
     cx.export_function("Canvas_get_engine", canvas::get_engine)?;
     cx.export_function("Canvas_set_engine", canvas::set_engine)?;
     cx.export_function("Canvas_get_engine_status", canvas::get_engine_status)?;

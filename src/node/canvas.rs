@@ -97,11 +97,9 @@ pub fn new(mut cx: FunctionContext) -> JsResult<BoxedCanvas> {
     }
 
     let gpu_enabled = bool_for_key(&mut cx, &opts, "gpu")?;
-    let color_type = opt_string_for_key(&mut cx, &opts, "colorType")
-        .map(|mode| to_color_type(&mode))
+    let color_type = opt_color_type_for_key(&mut cx, &opts, "colorType")?
         .unwrap_or(ColorType::RGBA8888);
-    let color_space = opt_string_for_key(&mut cx, &opts, "colorSpace")
-        .map(|mode| to_color_space(&mode))
+    let color_space = opt_color_space_for_key(&mut cx, &opts, "colorSpace")?
         .unwrap_or_else(ColorSpace::new_srgb);
     let this = RefCell::new(Canvas::new(
         text_contrast,
@@ -143,6 +141,21 @@ pub fn set_height(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     }
     this.borrow_mut().height = height;
     Ok(cx.undefined())
+}
+
+pub fn get_color_space(mut cx: FunctionContext) -> JsResult<JsString> {
+    let this = cx.argument::<BoxedCanvas>(0)?;
+    let name = from_color_space(&this.borrow().color_space);
+    match name {
+        Some(name) => Ok(cx.string(name)),
+        None => cx.throw_error("Canvas colour space has no canonical name"),
+    }
+}
+
+pub fn get_color_type(mut cx: FunctionContext) -> JsResult<JsString> {
+    let this = cx.argument::<BoxedCanvas>(0)?;
+    let name = from_color_type(this.borrow().color_type);
+    Ok(cx.string(name))
 }
 
 pub fn get_engine(mut cx: FunctionContext) -> JsResult<JsString> {
