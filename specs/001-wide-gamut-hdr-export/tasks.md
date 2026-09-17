@@ -89,7 +89,7 @@ covers.
 - [x] T022 Push; `rust-ci.yml` green (fmt, clippy, `cargo test`) -- run URL.
 - [x] T023 `test.yml` by `workflow_dispatch` green on all 6 jobs -- run URL.
 - [x] T024 Manual QA step 1 on a GPU host (needs the developer).
-- [ ] T024a PR description: name the R0 behaviour change and the Studio parity
+- [x] T024a PR description: name the R0 behaviour change and the Studio parity
   baseline regeneration it needs.
 - [ ] T025 Update contract rows with evidence; tick tasks; delete
   `plans/wide-gamut-hdr-export.md`.
