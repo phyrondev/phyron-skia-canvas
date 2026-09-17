@@ -1013,13 +1013,22 @@ pub fn output_alpha_and_white_args(
 ) -> NeonResult<(bool, f32)> {
     let premultiplied =
         opt_bool_for_key(cx, obj, "premultiplied").unwrap_or(false);
-    let white = opt_float_for_key(cx, obj, "hdrReferenceWhite")
-        .unwrap_or(DEFAULT_REFERENCE_WHITE);
-    match white.is_finite() && white > 0.0 {
-        true => Ok((premultiplied, white)),
-        false => cx.throw_range_error(format!(
-            "Expected a finite number greater than 0 for `hdrReferenceWhite` (got {white})"
-        )),
+    // `opt_float_for_key` drops non-finite numbers, so tell "absent" apart
+    // from "present but not usable" before falling back to the default
+    let raw: Handle<JsValue> = obj.get(cx, "hdrReferenceWhite")?;
+    let white = match raw.is_a::<JsUndefined, _>(cx) {
+        true => Some(DEFAULT_REFERENCE_WHITE),
+        false => opt_float_for_key(cx, obj, "hdrReferenceWhite")
+            .filter(|white| *white > 0.0),
+    };
+    match white {
+        Some(white) => Ok((premultiplied, white)),
+        None => {
+            let shown = raw.to_string(cx)?.value(cx);
+            cx.throw_range_error(format!(
+                "Expected a finite number greater than 0 for `hdrReferenceWhite` (got {shown})"
+            ))
+        }
     }
 }
 

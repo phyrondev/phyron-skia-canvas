@@ -31,7 +31,7 @@ GPU (Vulkan, Metal).
 **Performance Goals**: One extra `read_pixels` plus one per-pixel pass only for
 PQ and HLG outputs. No extra pass for other outputs.
 
-**Constraints**: No local native builds (battery). Evidence runs in CI on the
+**Constraints**: Evidence runs locally and in CI on the
 pushed branch. No `unwrap`/`expect` without `// SAFETY:`. Nightly rustfmt.
 
 ## Constitution Check
@@ -121,7 +121,7 @@ tests/suite/color.test.js       new: contract tests
 
 ## Implementation Slices
 
-One commit each, test first in the same commit (no local runner).
+One commit each, test first in the same commit.
 
 1. Spec and blueprints (this directory, `.blueprints` bump, SDD seeding).
 2. US2 colour names -> `color-names.md` N1-N4.

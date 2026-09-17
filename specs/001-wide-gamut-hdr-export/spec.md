@@ -209,8 +209,8 @@ to succeed, so that the output does not depend on the host.
 - Skia may not allow a PQ or HLG reference white other than its built-in
   value. Mitigation: research before R6 is planned.
 - The GPU path cannot be tested in CI. Mitigation: manual QA on a GPU host.
-- A native build is expensive (no local build exists). Mitigation: evidence
-  commands run in CI on the pushed branch (see Clarifications).
+- A cold native build is slow. Mitigation: keep one `target/`; CI covers the
+  OS matrix (see Clarifications).
 
 ## Clarifications
 
@@ -239,6 +239,8 @@ Session 2026-09-17:
   and `ImageData.colorSpace`.
 - Q: Does an unknown `colorType` name throw? A: Yes, a `TypeError`.
 - Q: Where do evidence commands run? A: In CI on the pushed branch
-  (`test.yml` by `workflow_dispatch`, and `rust-ci.yml`). No local builds.
+  (`test.yml` by `workflow_dispatch`, and `rust-ci.yml`). Correction: local
+  builds are fine; the development host is always on mains power and has a
+  GPU, so G1 and G2 run locally too.
 - Q: Is the `3.7.0` release part of done? A: No. It is a separate step after
   merge.

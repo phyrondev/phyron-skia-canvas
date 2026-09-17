@@ -6,8 +6,7 @@ Order tasks by dependency. Mark a task `[P]` when it can run in parallel with
 other `[P]` tasks in the same group -- it touches different files and has no
 ordering constraint. Pair each source task with the test or manual-QA task that
 produces its contract evidence. Write the test before the implementation it
-covers. No local native builds: a test is written first in the same commit, and
-it runs in CI.
+covers.
 
 ## Phase 1: Contract Setup
 

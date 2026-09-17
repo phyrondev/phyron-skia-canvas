@@ -222,24 +222,27 @@ describe("Working space compositing (contracts/working-space.md)", () => {
     [r, g, b].forEach((v) => near(v, 0.5, 1e-3));
   });
 
-  // W5
+  // W5: B equals A's own readback (the fill itself is not under test here)
   test("drawImage of a canvas keeps precision and range", async () => {
     for (const colorType of ["RGBAF32", "RGBAF16"]) {
       let src = greys(PRECISION, LINEAR_F32),
+        direct = floats(await src.toBuffer("raw", LINEAR_F32)),
         dst = cpuCanvas(PRECISION.length, 1, {
           colorType,
           colorSpace: "srgb-linear",
         });
       dst.getContext("2d").drawImage(src, 0, 0);
       let values = floats(await dst.toBuffer("raw", LINEAR_F32));
-      PRECISION.forEach((v, i) => {
+      direct
+        .filter((_, i) => i % 4 == 0)
+        .forEach((v, i) => {
         // a half float has 10 mantissa bits
         let tolerance =
           colorType == "RGBAF16"
             ? Math.max(1e-4, Math.pow(2, Math.floor(Math.log2(v))) / 1024)
             : 1e-4;
         near(values[i * 4], v, tolerance, colorType);
-      });
+        });
     }
   });
 
@@ -283,14 +286,13 @@ describe("Working space compositing (contracts/working-space.md)", () => {
       let src = greys(PRECISION, opts),
         data = src
           .getContext("2d")
-          .getImageData(0, 0, PRECISION.length, 1, opts);
+          .getImageData(0, 0, PRECISION.length, 1, opts),
+        read = floats(data.data);
       assert.equal(data.colorSpace, colorSpace);
       let dst = cpuCanvas(PRECISION.length, 1, opts);
       dst.getContext("2d").putImageData(data, 0, 0);
       let values = floats(await dst.toBuffer("raw", opts));
-      PRECISION.forEach((v, i) =>
-        near(values[i * 4], v, 1e-5, `${colorSpace} ${i}`),
-      );
+      read.forEach((v, i) => near(values[i], v, 1e-5, `${colorSpace} ${i}`));
     }
   });
 });

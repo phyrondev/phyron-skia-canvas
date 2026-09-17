@@ -7,7 +7,7 @@
 
 ## Validation Commands
 
-Evidence runs in CI on the pushed branch, not on the laptop.
+Evidence runs locally (Linux, Vulkan GPU) and in CI for the OS matrix.
 
 ```bash
 git push -u origin feat/wide-gamut-hdr-export
