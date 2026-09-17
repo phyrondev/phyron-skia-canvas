@@ -19,3 +19,7 @@ test/assets/Raleway
 !/.github
 !/.blueprints
 !/.gitmodules
+!/.specify
+!/.claude
+/.claude/*
+!/.claude/commands

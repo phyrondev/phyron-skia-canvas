@@ -31,6 +31,28 @@ Cross-project standards live in `.blueprints/` (git submodule).
 - [Phyron Output Types](.blueprints/domain/phyron-outputs.md)
 - [Domain Glossary](.blueprints/domain/glossary.md)
 
+### Spec-Driven Development
+
+<!-- SPEC-DRIVEN DEVELOPMENT START -->
+Spec-driven development is enabled for this repository.
+
+Before creating or changing a feature surface:
+
+- Read `.blueprints/domain/spec-driven-development.md`.
+- Read the active spec pointer in `.specify/feature.json`, or the project
+  equivalent named here.
+- Read the current feature plan before editing code.
+- Work one user story or one contract row at a time.
+- Mark contract rows `Covered` only after source evidence and test/manual QA
+  evidence are present.
+
+Project-specific specs live in `specs/`. Shared rules and templates live in
+`.blueprints/`.
+<!-- SPEC-DRIVEN DEVELOPMENT END -->
+
+- [Spec-Driven Development](.blueprints/domain/spec-driven-development.md)
+- [Measurement Discipline](.blueprints/base/measurement-discipline.md)
+
 ### Reference
 
 - [Writing Style](.blueprints/base/writing-style.md)
