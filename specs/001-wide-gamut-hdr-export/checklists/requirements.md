@@ -11,8 +11,8 @@
 
 - [x] Every important behavior has a contract row.
 - [x] Every row is `Covered`, `Partial`, or `Open`.
-- [ ] `Covered` rows cite source evidence.
-- [ ] `Covered` rows cite test or manual QA evidence.
+- [x] `Covered` rows cite source evidence.
+- [x] `Covered` rows cite test or manual QA evidence.
 - [x] Required evidence is listed before work starts.
 
 ## Implementation Readiness

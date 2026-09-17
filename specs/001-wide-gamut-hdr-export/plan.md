@@ -116,8 +116,8 @@ tests/suite/color.test.js       new: contract tests
 - [x] Active feature pointer is updated.
 - [x] Required artifact set exists.
 - [x] Each contract file has `Required Evidence Before Marking Complete`.
-- [ ] Each `Covered` row cites source evidence.
-- [ ] Each `Covered` row cites executable or manual QA evidence.
+- [x] Each `Covered` row cites source evidence.
+- [x] Each `Covered` row cites executable or manual QA evidence.
 
 ## Implementation Slices
 

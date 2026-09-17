@@ -9,8 +9,8 @@ cannot allocate the working colour type.
 
 | Behavior | Status | Source Evidence | Test/QA Evidence | Required Next Evidence |
 | --- | --- | --- | --- | --- |
-| G1: GPU engine, `RGBAF32` canvas: `toBuffer("raw")` succeeds with the E1 values | Open | None | None | `tests/suite/color.test.js` "GPU engine falls back to CPU raster" (skipped without GPU) and manual QA step 1 |
-| G2: after a fallback, `canvas.engine.fallback` names the colour type; absent otherwise | Open | None | None | same test, and manual QA step 1 |
+| G1: GPU engine, `RGBAF32` canvas: `toBuffer("raw")` succeeds with the E1 values | Covered | `RenderingEngine::make_surface` (`src/gpu/mod.rs`) | local release build `bfc2d36`, Linux + Vulkan GPU: `node --test tests/suite/color.test.js` 24/24 (ran, not skipped, Quadro RTX 5000); 3.6.0 threw `Could not allocate new 3x1 bitmap` on the same host; CI `test.yml` [35228478251](https://github.com/phyrondev/phyron-skia-canvas/actions/runs/35228478251): ran and passed on macOS (Metal), skipped on Ubuntu and Windows (no GPU) | None |
+| G2: after a fallback, `canvas.engine.fallback` names the colour type; absent otherwise | Covered | `FallbackCell` (`src/gpu/mod.rs`), `get_engine_status` (`src/node/canvas.rs`) | local release build `bfc2d36`, Linux + Vulkan GPU: `node --test tests/suite/color.test.js` 24/24 (ran, not skipped, Quadro RTX 5000); 3.6.0 threw `Could not allocate new 3x1 bitmap` on the same host; CI `test.yml` [35228478251](https://github.com/phyrondev/phyron-skia-canvas/actions/runs/35228478251): ran and passed on macOS (Metal), skipped on Ubuntu and Windows (no GPU) | None |
 
 ## Invariants
 
