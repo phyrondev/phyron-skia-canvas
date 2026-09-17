@@ -87,9 +87,18 @@ npm install phyron-skia-canvas
 ```js
 import { Canvas } from "phyron-skia-canvas";
 
+// composite in linear Rec.2020 at half-float precision
 let canvas = new Canvas(1920, 1080, {
-  colorType: "rgbaf16",
-  colorSpace: "rec2020-pq", // HDR10
+  colorType: "RGBAF16",
+  colorSpace: "rec2020-linear",
+});
+
+// ... draw ...
+
+// read back as 16-bit HDR10 (PQ) pixels
+let pixels = await canvas.toBuffer("raw", {
+  colorType: "R16G16B16A16UNorm",
+  colorSpace: "rec2020-pq",
 });
 ```
 
