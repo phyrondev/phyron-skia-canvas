@@ -49,13 +49,22 @@ impl Canvas {
             .get_or_insert_with(gpu::RenderingEngine::default)
     }
 
+    /// Default export options: output encoding `RGBA8888` `srgb`, working
+    /// space from this canvas.
     pub fn export_options(&self) -> ExportOptions {
-        ExportOptions {
+        self.in_working_space(ExportOptions {
             text_contrast: self.text_contrast as _,
             text_gamma: self.text_gamma as _,
-            color_type: self.color_type,
-            color_space: self.color_space.clone(),
             ..Default::default()
+        })
+    }
+
+    /// `opts` with this canvas's colour type and space as the working space.
+    pub fn in_working_space(&self, opts: ExportOptions) -> ExportOptions {
+        ExportOptions {
+            working_color_type: self.color_type,
+            working_color_space: self.color_space.clone(),
+            ..opts
         }
     }
 }
@@ -191,6 +200,7 @@ pub fn get_engine_status(mut cx: FunctionContext) -> JsResult<JsString> {
 pub fn toBuffer(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let this = cx.argument::<BoxedCanvas>(0)?;
     let options = export_options_arg(&mut cx, 2)?;
+    let options = this.borrow().in_working_space(options);
     let mut pages = pages_arg(&mut cx, 1, &options, &this)?;
 
     // ensure cached bitmaps are sendable to other thread
@@ -220,6 +230,7 @@ pub fn toBuffer(mut cx: FunctionContext) -> JsResult<JsPromise> {
 pub fn toBufferSync(mut cx: FunctionContext) -> JsResult<JsValue> {
     let this = cx.argument::<BoxedCanvas>(0)?;
     let options = export_options_arg(&mut cx, 2)?;
+    let options = this.borrow().in_working_space(options);
     let pages = pages_arg(&mut cx, 1, &options, &this)?;
 
     let encoded = {
@@ -245,6 +256,7 @@ pub fn save(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let sequence = !cx.argument::<JsValue>(3)?.is_a::<JsUndefined, _>(&mut cx);
     let padding = opt_float_arg(&mut cx, 3).unwrap_or(-1.0);
     let options = export_options_arg(&mut cx, 4)?;
+    let options = this.borrow().in_working_space(options);
     let mut pages = pages_arg(&mut cx, 1, &options, &this)?;
 
     // ensure cached bitmaps are sendable to other thread
@@ -278,6 +290,7 @@ pub fn saveSync(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let sequence = !cx.argument::<JsValue>(3)?.is_a::<JsUndefined, _>(&mut cx);
     let padding = opt_float_arg(&mut cx, 3).unwrap_or(-1.0);
     let options = export_options_arg(&mut cx, 4)?;
+    let options = this.borrow().in_working_space(options);
     let pages = pages_arg(&mut cx, 1, &options, &this)?;
 
     let result = {

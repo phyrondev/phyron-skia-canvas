@@ -14,7 +14,10 @@ fn pq_matches_reference_values() {
     .into_iter()
     .for_each(|(nits, signal)| {
         let got = pq_from_nits(nits);
-        assert!((got - signal).abs() < 1e-4, "{nits} nits: {got} != {signal}");
+        assert!(
+            (got - signal).abs() < 1e-4,
+            "{nits} nits: {got} != {signal}"
+        );
     });
 }
 

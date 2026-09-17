@@ -1,9 +1,9 @@
 //! PQ and HLG transfer functions for HDR output encoding.
 //!
 //! Skia constructs PQ and HLG colour spaces only with a fixed SDR reference
-//! white of 203 nits, and its raster PQ stage uses an approximate `powf`. So the
-//! export path reads linear Rec.2020 floats from Skia and encodes them here with
-//! the exact ST 2084 and BT.2100 formulas (see
+//! white of 203 nits, and its raster PQ stage uses an approximate `powf`. So
+//! the export path reads linear Rec.2020 floats from Skia and encodes them here
+//! with the exact ST 2084 and BT.2100 formulas (see
 //! `specs/001-wide-gamut-hdr-export/research.md`).
 //!
 //! All functions take unpremultiplied RGBA `f32` pixels, where linear `1.0` is

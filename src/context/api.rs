@@ -35,7 +35,10 @@ use skia_safe::{FourByteTag, Paint};
 pub fn new(mut cx: FunctionContext) -> JsResult<BoxedContext2D> {
     let parent = cx.argument::<BoxedCanvas>(1)?;
     let parent = parent.borrow();
-    let this = RefCell::new(Context2D::new(parent.color_space.clone()));
+    let this = RefCell::new(Context2D::new(
+        parent.color_type,
+        parent.color_space.clone(),
+    ));
 
     this.borrow_mut().reset_size((parent.width, parent.height));
     Ok(cx.boxed(this))

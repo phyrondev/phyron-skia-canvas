@@ -117,8 +117,8 @@ impl Recorder {
 
         let export_options = ExportOptions {
             density,
-            color_type: ColorType::RGBAF16,
-            color_space: surface_color_space,
+            working_color_type: ColorType::RGBAF16,
+            working_color_space: surface_color_space,
             msaa: surface_options.msaa,
             ..ExportOptions::default()
         };

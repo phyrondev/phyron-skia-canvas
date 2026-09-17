@@ -54,8 +54,8 @@ impl Surface {
         let internal = resolve_engine(options.engine)?;
         let export_options = ExportOptions {
             msaa: options.msaa,
-            color_type: ColorType::RGBAF16,
-            color_space: cs.clone(),
+            working_color_type: ColorType::RGBAF16,
+            working_color_space: cs.clone(),
             ..ExportOptions::default()
         };
         let surface = internal.make_surface(&info, &export_options).map_err(

@@ -992,13 +992,9 @@ pub fn image_data_export_arg(
             let msaa = opt_float_for_key(cx, &obj, "msaa").map(|n| n as usize);
             Ok((color_type, color_space, matte, density, msaa))
         }
-        None => Ok((
-            ColorType::RGBA8888,
-            ColorSpace::new_srgb(),
-            None,
-            1.0,
-            None,
-        )),
+        None => {
+            Ok((ColorType::RGBA8888, ColorSpace::new_srgb(), None, 1.0, None))
+        }
     }
 }
 
@@ -1078,8 +1074,7 @@ pub fn from_color_space(color_space: &ColorSpace) -> Option<&'static str> {
 /// alias. Throws a `TypeError` for an unknown name.
 pub fn color_space_name(mut cx: FunctionContext) -> JsResult<JsString> {
     let name = string_arg(&mut cx, 0, "colorSpace")?;
-    let canonical = to_color_space(&name)
-        .map(|space| from_color_space(&space));
+    let canonical = to_color_space(&name).map(|space| from_color_space(&space));
     match canonical {
         Ok(Some(canonical)) => Ok(cx.string(canonical)),
         Ok(None) => cx.throw_error(format!(
