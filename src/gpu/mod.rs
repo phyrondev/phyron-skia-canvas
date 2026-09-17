@@ -7,8 +7,38 @@ use skia_safe::{
 };
 use std::{
     fmt,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
+
+/// Set once the GPU contexts are released for process exit. After that, GPU
+/// surface requests fail and exports fall back to CPU raster.
+#[cfg_attr(not(feature = "node-addon"), allow(dead_code))]
+static CONTEXTS_RELEASED: AtomicBool = AtomicBool::new(false);
+
+/// `true` once [`release_contexts`] ran.
+#[cfg_attr(not(any(feature = "vulkan", feature = "metal")), allow(dead_code))]
+pub(crate) fn contexts_released() -> bool {
+    CONTEXTS_RELEASED.load(Ordering::SeqCst)
+}
+
+/// Drop the rayon workers' GPU contexts and stop the idle watcher, before
+/// process exit.
+///
+/// AIDEV-NOTE: worker contexts that are still alive at exit crash the process
+/// with `SIGSEGV` when several processes use the GPU. Measured with parallel
+/// `node --test` on a Vulkan host: 5 of 12 stressed runs crashed; waiting out
+/// the 5 s context lifespan, or this release, gave 0 of 12 and 0 of 20. Do not
+/// drop the calling thread's context: surfaces that JS objects own (the
+/// `getImageData` surface) belong to it and are freed during exit teardown,
+/// which then crashes every time.
+#[cfg_attr(not(feature = "node-addon"), allow(dead_code))]
+pub fn release_contexts() {
+    CONTEXTS_RELEASED.store(true, Ordering::SeqCst);
+    Engine::release_contexts();
+}
 
 #[cfg(feature = "metal")]
 mod metal;
@@ -54,6 +84,8 @@ impl Engine {
     ) -> Result<Surface, String> {
         panic!()
     }
+
+    pub fn release_contexts() {}
 
     pub fn with_direct_context(_f: impl FnOnce(Option<&mut DirectContext>)) {
         panic!()

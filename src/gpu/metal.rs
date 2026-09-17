@@ -19,7 +19,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::context::page::ExportOptions;
+use crate::{context::page::ExportOptions, gpu::contexts_released};
 
 thread_local!(
     static MTL_CONTEXT: RefCell<Option<MetalContext>> =
@@ -84,8 +84,9 @@ impl MetalEngine {
     fn spawn_idle_watcher() {
         // use a non-rayon thread so as not to compete with the worker threads
         std::thread::spawn(move || {
-            loop {
-                // run forever, watching the other threads in the pool
+            // watch the other threads in the pool until the contexts are
+            // released for process exit
+            while !contexts_released() {
                 std::thread::sleep(Duration::from_secs(1));
                 rayon::spawn_broadcast(|_| {
                     // drop contexts that haven't been used in a while to free
@@ -105,7 +106,10 @@ impl MetalEngine {
     where
         F: FnOnce(&mut MetalContext) -> Result<T, String>,
     {
-        match MetalEngine::supported() {
+        match !contexts_released() && MetalEngine::supported() {
+            false if contexts_released() => {
+                Err("GPU contexts were released for process exit".to_string())
+            }
             false => Err("Metal API not supported".to_string()),
             true => MTL_CONTEXT.with_borrow_mut(|local_ctx| {
                 autoreleasepool(||
@@ -119,6 +123,16 @@ impl MetalEngine {
                         }))
             }),
         }
+    }
+
+    /// Drop the GPU context of every rayon worker, on its own thread, the way
+    /// the idle watcher does after the context lifespan. The calling thread's
+    /// context stays alive: surfaces that JS objects own (for example the
+    /// `getImageData` surface) belong to it and are freed during exit teardown.
+    pub fn release_contexts() {
+        rayon::broadcast(|_| {
+            MTL_CONTEXT.with_borrow_mut(|cell| drop(cell.take()))
+        });
     }
 
     pub fn with_direct_context<F>(f: F)

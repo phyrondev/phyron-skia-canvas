@@ -127,6 +127,14 @@ pub(crate) use node::{
 #[cfg(feature = "node-addon")]
 use context::api as ctx;
 
+/// `releaseGpuContexts()`: drop all GPU contexts before process exit (see
+/// `gpu::release_contexts`).
+#[cfg(feature = "node-addon")]
+fn release_gpu_contexts(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    gpu::release_contexts();
+    Ok(cx.undefined())
+}
+
 /// Module-level function to get backend status without creating a canvas.
 /// Returns JSON string with renderer, api, device, driver, threads, and
 /// gpuAvailable fields.
@@ -441,6 +449,7 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
 
     cx.export_function("backend", backend)?;
     cx.export_function("colorSpaceName", utils::color_space_name)?;
+    cx.export_function("releaseGpuContexts", release_gpu_contexts)?;
 
     // -- Canvas ------------------------------------------------------------------------------------
 

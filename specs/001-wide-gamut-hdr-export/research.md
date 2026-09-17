@@ -41,6 +41,18 @@ test confirms it.
 - M9. `tests/suite/canvas.test.js` crashes (`SIGSEGV`, once `SIGABRT`) when
   the suite runs in parallel: `main` (`aeadf2d`) 4 of 5 runs, this branch 3 of
   5 runs, dev builds, Vulkan GPU host. Pre-existing; alone it passes.
+  Cause: the crash happens after the last test, at process exit, only when
+  several processes use Vulkan at the same time. rayon worker threads still
+  hold their thread-local GPU contexts at exit. Waiting out the 5 s context
+  lifespan removes it (0 of 12 against 5 of 12 stressed runs). Fix:
+  `gpu::release_contexts`, called on the JS `exit` event, drops the worker
+  contexts on their own threads and stops the idle watcher: 0 of 20 stressed
+  runs, 0 of 5 full parallel runs. Rejected: dropping the calling thread's
+  context too (the `getImageData` surface belongs to it; every run crashed),
+  and only stopping the idle watcher (9 of 20 crashed).
+- M11. `test.yml` failed on every job (`main` and branch) because its checkout
+  did not fetch Git LFS objects; test images and fonts are LFS files. With
+  `lfs: true` all 6 jobs pass.
 - M10. 1920x1080 `drawImage(canvas)` plus raw readback, CPU, dev builds,
   median of 7: `main` 2662 ms, branch 791 ms. `3.6.0` release build: 97 ms.
 - M5. A float colour array acts as unpremultiplied: `[0.5,0.5,0.5,0.5]` over
