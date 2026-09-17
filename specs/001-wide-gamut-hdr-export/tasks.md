@@ -91,5 +91,5 @@ covers.
 - [x] T024 Manual QA step 1 on a GPU host (needs the developer).
 - [x] T024a PR description: name the R0 behaviour change and the Studio parity
   baseline regeneration it needs.
-- [ ] T025 Update contract rows with evidence; tick tasks; delete
+- [x] T025 Update contract rows with evidence; tick tasks; delete
   `plans/wide-gamut-hdr-export.md`.
