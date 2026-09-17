@@ -198,6 +198,11 @@ to succeed, so that the output does not depend on the host.
   `display-p3` is clipped to the sRGB gamut, and a `RGBAF32` export of an 8-bit
   canvas has 8-bit precision. Mitigation: document that the canvas settings
   set precision and gamut; the release notes say so.
+- R0 changes Studio server renders: today they blend in gamma space (50%
+  white over black is 128), and after R0 a linear working canvas blends
+  linearly (188), like the CanvasKit editor. Studio's byte-identical parity
+  baselines need a human-approved regeneration. Mitigation: the PR description
+  says so (reported by the Studio session).
 - R3 is a behaviour change: a caller that passes an invalid colour space or
   colour type name gets an exception instead of sRGB or `RGBA8888`. Mitigation:
   the error names the accepted values; the release notes say so.
