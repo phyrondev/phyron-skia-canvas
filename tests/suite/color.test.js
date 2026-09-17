@@ -128,8 +128,9 @@ const srgbEncode = (v) =>
     );
   };
 
-const floats = (buf) =>
-    Array.from(new Float32Array(buf.buffer, buf.byteOffset, buf.length / 4)),
+// copy first: a Buffer's byteOffset need not be aligned for a typed array
+const floats = (buf) => Array.from(new Float32Array(Uint8Array.from(buf).buffer)),
+  u16s = (buf) => Array.from(new Uint16Array(Uint8Array.from(buf).buffer)),
   near = (actual, expected, tolerance, label = "") =>
     assert.ok(
       Math.abs(actual - expected) <= tolerance,
@@ -291,5 +292,222 @@ describe("Working space compositing (contracts/working-space.md)", () => {
         near(values[i * 4], v, 1e-5, `${colorSpace} ${i}`),
       );
     }
+  });
+});
+
+//
+// Primaries matrices from chromaticities (SMPTE RP 177), and HDR encoders
+//
+
+const D65 = [0.3127, 0.329],
+  PRIMARIES = {
+    rec709: [
+      [0.64, 0.33],
+      [0.3, 0.6],
+      [0.15, 0.06],
+    ],
+    p3: [
+      [0.68, 0.32],
+      [0.265, 0.69],
+      [0.15, 0.06],
+    ],
+    rec2020: [
+      [0.708, 0.292],
+      [0.17, 0.797],
+      [0.131, 0.046],
+    ],
+  },
+  xyz = ([x, y]) => [x / y, 1, (1 - x - y) / y],
+  inverse3 = (m) => {
+    const [[a, b, c], [d, e, f], [g, h, i]] = m,
+      det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+    return [
+      [e * i - f * h, c * h - b * i, b * f - c * e],
+      [f * g - d * i, a * i - c * g, c * d - a * f],
+      [d * h - e * g, b * g - a * h, a * e - b * d],
+    ].map((row) => row.map((v) => v / det));
+  },
+  transpose3 = (m) => m[0].map((_, col) => m.map((row) => row[col])),
+  mulMat3 = (a, b) => a.map((row) => transpose3(b).map((col) => mul3([row], col)[0])),
+  rgbToXyz = (primaries) => {
+    const p = transpose3(primaries.map(xyz)),
+      s = mul3(inverse3(p), xyz(D65));
+    return p.map((row) => row.map((v, i) => v * s[i]));
+  },
+  rec2020To = (target) =>
+    mulMat3(inverse3(rgbToXyz(PRIMARIES[target])), rgbToXyz(PRIMARIES.rec2020)),
+  pqEncode = (nits) => {
+    const m1 = 2610 / 16384,
+      m2 = (2523 / 4096) * 128,
+      c1 = 3424 / 4096,
+      c2 = (2413 / 4096) * 32,
+      c3 = (2392 / 4096) * 32,
+      y = Math.pow(Math.min(Math.max(nits / 10000, 0), 1), m1);
+    return Math.pow((c1 + c2 * y) / (1 + c3 * y), m2);
+  },
+  /** BT.2100 HLG, display-referred: 1000-nit display, system gamma 1.2. */
+  hlgEncode = (rgb, white) => {
+    const a = 0.17883277,
+      b = 1 - 4 * a,
+      c = 0.5 - a * Math.log(4 * a),
+      oetf = (e) => (e <= 1 / 12 ? Math.sqrt(3 * e) : a * Math.log(12 * e - b) + c),
+      display = rgb.map((v) => Math.max(v * white, 0) / 1000),
+      luma = 0.2627 * display[0] + 0.678 * display[1] + 0.0593 * display[2],
+      gain = luma > 0 ? Math.pow(luma, (1 - 1.2) / 1.2) : 0;
+    return display.map((e) => oetf(Math.min(Math.max(e * gain, 0), 1)));
+  },
+  toCode = (signal) => Math.round(Math.min(Math.max(signal, 0), 1) * 65535);
+
+describe("Raw export encoding (contracts/raw-export.md)", () => {
+  const FILLS = [
+      [0, 1, 0],
+      [1, 1, 1],
+      [2, 2, 2],
+    ],
+    REC2020 = { colorType: "RGBAF32", colorSpace: "rec2020-linear" },
+    fixture = () => {
+      let canvas = cpuCanvas(3, 1, REC2020),
+        ctx = canvas.getContext("2d");
+      FILLS.forEach((rgb, i) => {
+        ctx.fillStyle = [...rgb, 1];
+        ctx.fillRect(i, 0, 1, 1);
+      });
+      return canvas;
+    },
+    pixel = (values, i) => values.slice(i * 4, i * 4 + 3);
+
+  test("primaries matrix matches BT.2087", () => {
+    rec2020To("rec709").forEach((row, r) =>
+      row.forEach((v, c) => near(v, REC2020_TO_709[r][c], 1e-3)),
+    );
+  });
+
+  // E1
+  test("raw export converts to the requested space", async () => {
+    const expected = {
+      "rec2020-linear": (rgb) => rgb,
+      "srgb-linear": (rgb) => mul3(rec2020To("rec709"), rgb),
+      "display-p3-linear": (rgb) => mul3(rec2020To("p3"), rgb),
+      srgb: (rgb) => mul3(rec2020To("rec709"), rgb).map(srgbEncode),
+    };
+    for (const [colorSpace, convert] of Object.entries(expected)) {
+      let values = floats(
+        await fixture().toBuffer("raw", { colorType: "RGBAF32", colorSpace }),
+      );
+      FILLS.forEach((rgb, i) =>
+        pixel(values, i).forEach((v, ch) =>
+          near(v, convert(rgb)[ch], 1e-3, `${colorSpace} px${i} ch${ch}`),
+        ),
+      );
+    }
+  });
+
+  // E2
+  test("raw export encodes PQ", async () => {
+    let codes = u16s(
+      await fixture().toBuffer("raw", {
+        colorType: "R16G16B16A16UNorm",
+        colorSpace: "rec2020-pq",
+      }),
+    );
+    FILLS.forEach((rgb, i) =>
+      pixel(codes, i).forEach((code, ch) =>
+        near(code, toCode(pqEncode(rgb[ch] * 203)), 2, `px${i} ch${ch}`),
+      ),
+    );
+  });
+
+  // E3
+  test("raw export encodes HLG", async () => {
+    let codes = u16s(
+      await fixture().toBuffer("raw", {
+        colorType: "R16G16B16A16UNorm",
+        colorSpace: "rec2020-hlg",
+      }),
+    );
+    FILLS.forEach((rgb, i) =>
+      pixel(codes, i).forEach((code, ch) =>
+        near(code, toCode(hlgEncode(rgb, 203)[ch]), 2, `px${i} ch${ch}`),
+      ),
+    );
+    near(codes[4], Math.round(0.75 * 65535), 0.001 * 65535, "white is 75%");
+  });
+
+  // E4
+  test("hdrReferenceWhite scales PQ and HLG", async () => {
+    const opts = { colorType: "R16G16B16A16UNorm", hdrReferenceWhite: 100 };
+    let pq = u16s(
+        await fixture().toBuffer("raw", { ...opts, colorSpace: "rec2020-pq" }),
+      ),
+      hlg = u16s(
+        await fixture().toBuffer("raw", { ...opts, colorSpace: "rec2020-hlg" }),
+      );
+    near(pq[4], toCode(pqEncode(100)), 2, "PQ white");
+    near(hlg[4], toCode(hlgEncode([1, 1, 1], 100)[0]), 2, "HLG white");
+  });
+
+  // E5
+  test("hdrReferenceWhite validates", async () => {
+    for (const hdrReferenceWhite of [0, -1, NaN, Infinity]) {
+      await assert.rejects(
+        async () =>
+          fixture().toBuffer("raw", {
+            colorSpace: "rec2020-pq",
+            hdrReferenceWhite,
+          }),
+        RangeError,
+        String(hdrReferenceWhite),
+      );
+      assert.throws(
+        () =>
+          fixture()
+            .getContext("2d")
+            .getImageData(0, 0, 1, 1, { hdrReferenceWhite }),
+        RangeError,
+      );
+    }
+  });
+
+  // E6
+  test("premultiplied option", async () => {
+    let canvas = cpuCanvas(1, 1, LINEAR_F32),
+      ctx = canvas.getContext("2d");
+    ctx.fillStyle = [1, 1, 1, 0.5];
+    ctx.fillRect(0, 0, 1, 1);
+
+    let [r, , , a] = floats(await canvas.toBuffer("raw", LINEAR_F32));
+    near(r, 1, 1e-3, "unpremultiplied");
+    near(a, 0.5, 1e-4);
+
+    [r, , , a] = floats(
+      await canvas.toBuffer("raw", { ...LINEAR_F32, premultiplied: true }),
+    );
+    near(r, 0.5, 1e-3, "premultiplied");
+    near(a, 0.5, 1e-4);
+
+    [r] = floats(
+      await canvas.toBuffer("raw", {
+        colorType: "RGBAF32",
+        colorSpace: "rec2020-pq",
+        premultiplied: true,
+      }),
+    );
+    near(r, pqEncode(203) * 0.5, 1e-3, "premultiplied PQ");
+
+    [r] = floats(
+      ctx.getImageData(0, 0, 1, 1, { ...LINEAR_F32, premultiplied: true }).data,
+    );
+    near(r, 0.5, 1e-3, "premultiplied getImageData");
+  });
+
+  // E7
+  test("getImageData converts to the requested space", () => {
+    const opts = { colorType: "RGBAF32", colorSpace: "display-p3-linear" };
+    let data = fixture().getContext("2d").getImageData(0, 0, 3, 1, opts),
+      expected = mul3(rec2020To("p3"), [0, 1, 0]);
+    assert.equal(data.colorSpace, "display-p3-linear");
+    pixel(floats(data.data), 0).forEach((v, ch) =>
+      near(v, expected[ch], 1e-3, `ch${ch}`),
+    );
   });
 });

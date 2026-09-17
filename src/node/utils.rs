@@ -980,21 +980,46 @@ pub fn image_data_settings_arg(
 pub fn image_data_export_arg(
     cx: &mut FunctionContext,
     idx: usize,
-) -> NeonResult<(ColorType, ColorSpace, Option<Color>, f32, Option<usize>)> {
+) -> NeonResult<ExportOptions> {
     match opt_object_arg(cx, idx) {
         Some(obj) => {
             let color_type = opt_color_type_for_key(cx, &obj, "colorType")?
                 .unwrap_or(ColorType::RGBA8888);
             let color_space = opt_color_space_for_key(cx, &obj, "colorSpace")?
                 .unwrap_or_else(ColorSpace::new_srgb);
-            let matte = opt_color_for_key(cx, &obj, "matte");
-            let density = opt_float_for_key(cx, &obj, "density").unwrap_or(1.0);
-            let msaa = opt_float_for_key(cx, &obj, "msaa").map(|n| n as usize);
-            Ok((color_type, color_space, matte, density, msaa))
+            let (premultiplied, hdr_reference_white) =
+                output_alpha_and_white_args(cx, &obj)?;
+            Ok(ExportOptions {
+                color_type,
+                color_space,
+                premultiplied,
+                hdr_reference_white,
+                matte: opt_color_for_key(cx, &obj, "matte"),
+                density: opt_float_for_key(cx, &obj, "density").unwrap_or(1.0),
+                msaa: opt_float_for_key(cx, &obj, "msaa").map(|n| n as usize),
+                ..ExportOptions::default()
+            })
         }
-        None => {
-            Ok((ColorType::RGBA8888, ColorSpace::new_srgb(), None, 1.0, None))
-        }
+        None => Ok(ExportOptions::default()),
+    }
+}
+
+/// Read `premultiplied` (default `false`) and `hdrReferenceWhite` (nits,
+/// default 203). Throw a `RangeError` unless the reference white is finite and
+/// greater than 0.
+pub fn output_alpha_and_white_args(
+    cx: &mut FunctionContext,
+    obj: &Handle<JsObject>,
+) -> NeonResult<(bool, f32)> {
+    let premultiplied =
+        opt_bool_for_key(cx, obj, "premultiplied").unwrap_or(false);
+    let white = opt_float_for_key(cx, obj, "hdrReferenceWhite")
+        .unwrap_or(DEFAULT_REFERENCE_WHITE);
+    match white.is_finite() && white > 0.0 {
+        true => Ok((premultiplied, white)),
+        false => cx.throw_range_error(format!(
+            "Expected a finite number greater than 0 for `hdrReferenceWhite` (got {white})"
+        )),
     }
 }
 
@@ -1201,7 +1226,7 @@ pub fn from_color_type(color_type: ColorType) -> String {
 // ExportOptions
 //
 
-use crate::context::page::ExportOptions;
+use crate::context::{page::ExportOptions, transfer::DEFAULT_REFERENCE_WHITE};
 
 pub fn export_options_arg(
     cx: &mut FunctionContext,
@@ -1226,6 +1251,8 @@ pub fn export_options_arg(
 
     let color_space = opt_color_space_for_key(cx, &opts, "colorSpace")?
         .unwrap_or_else(ColorSpace::new_srgb);
+    let (premultiplied, hdr_reference_white) =
+        output_alpha_and_white_args(cx, &opts)?;
 
     Ok(ExportOptions {
         format,
@@ -1236,6 +1263,8 @@ pub fn export_options_arg(
         msaa,
         color_type,
         color_space,
+        premultiplied,
+        hdr_reference_white,
         jpeg_downsample,
         text_contrast,
         text_gamma,

@@ -9,6 +9,8 @@
 //! All functions take unpremultiplied RGBA `f32` pixels, where linear `1.0` is
 //! the SDR reference white. Alpha is not changed.
 
+use skia_safe::{ColorSpace, named_primaries, named_transfer_fn};
+
 #[cfg(test)]
 mod tests;
 
@@ -26,6 +28,45 @@ const HLG_GAMMA: f64 = 1.2;
 
 /// BT.2020 luma coefficients.
 const LUMA: [f64; 3] = [0.2627, 0.6780, 0.0593];
+
+/// An HDR output transfer that this module encodes instead of Skia.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum HdrTransfer {
+    Pq,
+    Hlg,
+}
+
+impl HdrTransfer {
+    /// The HDR transfer of `space`, or `None` for an SDR space.
+    pub fn of(space: &ColorSpace) -> Option<Self> {
+        let rec2020 = |transfer| {
+            ColorSpace::new_cicp(named_primaries::CicpId::Rec2020, transfer)
+        };
+        [
+            (Self::Pq, named_transfer_fn::CicpId::PQ),
+            (Self::Hlg, named_transfer_fn::CicpId::HLG),
+        ]
+        .into_iter()
+        .find(|(_, transfer)| rec2020(*transfer).as_ref() == Some(space))
+        .map(|(hdr, _)| hdr)
+    }
+
+    /// Encode unpremultiplied linear Rec.2020 RGBA pixels, in place.
+    pub fn encode(self, rgba: &mut [f32], reference_white: f32) {
+        match self {
+            Self::Pq => encode_pq(rgba, reference_white),
+            Self::Hlg => encode_hlg(rgba, reference_white),
+        }
+    }
+}
+
+/// Linear Rec.2020, the space the HDR encoders read from.
+pub fn rec2020_linear() -> Option<ColorSpace> {
+    ColorSpace::new_cicp(
+        named_primaries::CicpId::Rec2020,
+        named_transfer_fn::CicpId::Linear,
+    )
+}
 
 /// ST 2084 inverse EOTF: absolute luminance in nits to a PQ signal in
 /// `[0, 1]`.
