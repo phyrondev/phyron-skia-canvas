@@ -51,7 +51,7 @@ fn pq_reference_white_scales_linear_input() {
     encode_pq(&mut pixel, DEFAULT_REFERENCE_WHITE);
     assert!((f64::from(pixel[0]) - pq_from_nits(203.0)).abs() < 1e-6);
     assert!((f64::from(pixel[1]) - pq_from_nits(406.0)).abs() < 1e-6);
-    assert_eq!(pixel[2], 0.0);
+    assert_eq!(pixel[2], pq_from_nits(0.0) as f32);
     assert_eq!(pixel[3], 0.5);
 
     let mut pixel = [1.0, 1.0, 1.0, 1.0];
@@ -65,7 +65,10 @@ fn negative_input_encodes_as_black() {
     encode_hlg(&mut pixel, DEFAULT_REFERENCE_WHITE);
     assert_eq!(&pixel[..3], &[0.0, 0.0, 0.0]);
 
+    // ST 2084 maps 0 nits to c1^m2 (7.3e-7), which quantizes to code 0.
+    let black = pq_from_nits(0.0) as f32;
+    assert!(black < 1.0 / 65535.0 / 2.0);
     let mut pixel = [-0.5, -0.1, -2.0, 1.0];
     encode_pq(&mut pixel, DEFAULT_REFERENCE_WHITE);
-    assert_eq!(&pixel[..3], &[0.0, 0.0, 0.0]);
+    assert_eq!(&pixel[..3], &[black, black, black]);
 }
