@@ -25,6 +25,12 @@ jobs:
       matrix: ${{ steps.matrix.outputs.targets }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The script imports its download dependencies at module scope, so even
+      # listing the targets needs them installed.
+      - run: npm ci --ignore-scripts
       - id: matrix
         run: echo "targets=$(node scripts/platform-package.mjs matrix)" >> "$GITHUB_OUTPUT"
 
