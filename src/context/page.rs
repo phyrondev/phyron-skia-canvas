@@ -10,7 +10,7 @@ use skia_safe::{
     Document, IRect, ISize, Image as SkImage, ImageInfo, Matrix, Path, Picture,
     PictureRecorder, PixelGeometry, Rect, Size, Surface, SurfaceProps,
     SurfacePropsFlags,
-    image::CachingHint,
+    image::{BitDepth, CachingHint},
     images, jpeg_encoder, pdf, png_encoder, surfaces,
     svg::{self, canvas::Flags},
     webp_encoder,
@@ -186,25 +186,65 @@ impl PageRecorder {
         page
     }
 
-    /// Rasterize the page for use as a `drawImage` source, in the canvas
+    /// Snapshot the page for use as a `drawImage` source, in the canvas
     /// working colour type and space so precision, gamut and range survive.
+    ///
+    /// For 8-bit RGBA and half-float canvases the image is picture-backed and
+    /// lazy: Skia rasterizes it only when the destination is drawn, which for
+    /// a recorded destination is at export, on the export thread. The
+    /// working colour space is kept, so it composites as the eager raster
+    /// would. Skia's picture images exist only at 8-bit and half-float
+    /// depth, so every other colour type (`RGBAF32` among them) is rasterized
+    /// here, eagerly, at that type.
     pub fn get_image(
         &mut self,
         color_type: ColorType,
         color_space: &ColorSpace,
     ) -> Option<SkImage> {
-        let info = ImageInfo::new(
-            self.bounds.size().to_floor(),
-            color_type,
-            AlphaType::Premul,
-            color_space.clone(),
-        );
+        let size = self.bounds.size().to_floor();
         let picture = self.get_page().get_picture(None)?;
-        let mut surface = surfaces::raster(&info, None, None)?;
-        surface.canvas().draw_picture(&picture, None, None);
-        Some(surface.image_snapshot())
+        match lazy_bit_depth(color_type) {
+            Some(bit_depth) => images::deferred_from_picture(
+                picture,
+                size,
+                None,
+                None,
+                bit_depth,
+                Some(color_space.clone()),
+                None,
+            ),
+            None => {
+                let info = ImageInfo::new(
+                    size,
+                    color_type,
+                    AlphaType::Premul,
+                    color_space.clone(),
+                );
+                let mut surface = surfaces::raster(&info, None, None)?;
+                surface.canvas().draw_picture(&picture, None, None);
+                Some(surface.image_snapshot())
+            }
+        }
     }
 }
+
+/// The depth of a lazy picture-backed `drawImage` source for a canvas of
+/// `color_type`, or `None` when Skia has no picture image of that type.
+///
+/// Skia rasterizes a lazy picture image as `N32` (8-bit RGBA or BGRA, by
+/// platform) or as `RGBAF16`, premultiplied. Only canvas types with the same
+/// channels and precision qualify: an `RGB888x`, `SRGBA8888` or
+/// `RGBAF16Norm` source would gain alpha or lose its encoding or clamp.
+fn lazy_bit_depth(color_type: ColorType) -> Option<BitDepth> {
+    match color_type {
+        ColorType::RGBA8888 | ColorType::BGRA8888 => Some(BitDepth::U8),
+        ColorType::RGBAF16 => Some(BitDepth::F16),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests;
 
 impl Drop for PageRecorder {
     fn drop(&mut self) {
