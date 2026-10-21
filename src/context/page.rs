@@ -189,21 +189,24 @@ impl PageRecorder {
     /// Snapshot the page for use as a `drawImage` source, in the canvas
     /// working colour type and space so precision, gamut and range survive.
     ///
-    /// For 8-bit RGBA and half-float canvases the image is picture-backed and
-    /// lazy: Skia rasterizes it only when the destination is drawn, which for
-    /// a recorded destination is at export, on the export thread. The
-    /// working colour space is kept, so it composites as the eager raster
-    /// would. Skia's picture images exist only at 8-bit and half-float
-    /// depth, so every other colour type (`RGBAF32` among them) is rasterized
-    /// here, eagerly, at that type.
+    /// With `cpu_only` set (both canvases render on the CPU), an 8-bit RGBA
+    /// or half-float source is a lazy picture image: Skia rasterizes it when
+    /// the destination is rasterized, which for a recorded destination is at
+    /// export, on the export thread. The working colour space is kept, so the
+    /// pixels equal the eager raster's. Otherwise the source is rasterized
+    /// here, on the CPU, at its own colour type. That covers types Skia has
+    /// no picture image for (`RGBAF32` among them) and GPU canvases: Ganesh
+    /// plays a lazy picture image back on the GPU, which changes gradients and
+    /// antialiased edges against the CPU raster.
     pub fn get_image(
         &mut self,
         color_type: ColorType,
         color_space: &ColorSpace,
+        cpu_only: bool,
     ) -> Option<SkImage> {
         let size = self.bounds.size().to_floor();
         let picture = self.get_page().get_picture(None)?;
-        match lazy_bit_depth(color_type) {
+        match lazy_bit_depth(color_type).filter(|_| cpu_only) {
             Some(bit_depth) => images::deferred_from_picture(
                 picture,
                 size,

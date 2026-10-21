@@ -7,6 +7,17 @@
 
 <!--## 🥚 ⟩ [Unreleased]-->
 
+## 📦 ⟩ [v3.7.2] (npm) ⟩ October 21, 2026
+
+### Fixes
+
+- **A `drawImage(canvas)` source is lazy only when both canvases render on
+  the CPU.** If either canvas uses the GPU engine, the source is rasterized at
+  the call, on the CPU, as in 3.7.0, so GPU exports keep 3.7.0's pixels. 3.7.1
+  let Ganesh play lazy sources back on the GPU, which changed them: a gradient
+  stop drew `(92,3,0)` where the solid fill drew `(92,0,0)`, and ID-buffer
+  edges resolved to no item. 3.7.1 was not published to npm.
+
 ## 📦 ⟩ [v3.7.1] (npm) ⟩ October 21, 2026
 
 ### Performance

@@ -49,12 +49,18 @@ impl Clone for Content {
 }
 
 impl Content {
-    pub fn from_context(ctx: &mut Context2D, use_vector: bool) -> Self {
+    /// `cpu_only`: both canvases render on the CPU, so a bitmap source may
+    /// be lazy (see `PageRecorder::get_image`).
+    pub fn from_context(
+        ctx: &mut Context2D,
+        use_vector: bool,
+        cpu_only: bool,
+    ) -> Self {
         match use_vector {
             true => ctx
                 .get_picture()
                 .map(|p| Content::Vector(p, ctx.bounds.size())),
-            false => ctx.get_image().map(Content::Bitmap),
+            false => ctx.get_image(cpu_only).map(Content::Bitmap),
         }
         .unwrap_or_default()
     }

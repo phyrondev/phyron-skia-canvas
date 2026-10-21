@@ -895,8 +895,18 @@ fn _layout_rects(
 
 pub fn drawImage(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let this = cx.argument::<BoxedContext2D>(0)?;
-    let argc = cx.len();
     let source = cx.argument::<JsValue>(1)?;
+    // A canvas source is followed by a flag: true when the source and this
+    // canvas both render on the CPU (`PageRecorder::get_image`).
+    let cpu_only = match cx.argument_opt(2) {
+        Some(flag) if flag.is_a::<JsBoolean, _>(&mut cx) => Some(
+            flag.downcast_or_throw::<JsBoolean, _>(&mut cx)?
+                .value(&mut cx),
+        ),
+        _ => None,
+    };
+    let first_num = if cpu_only.is_some() { 3 } else { 2 };
+    let argc = cx.len().saturating_sub(first_num - 2);
     let arg_names = [
         "srcX",
         "srcY",
@@ -907,13 +917,18 @@ pub fn drawImage(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         "dstWidth",
         "dstHeight",
     ];
-    let nums = float_args_or_bail_at(&mut cx, 2, &arg_names[..argc - 2])?;
+    let nums =
+        float_args_or_bail_at(&mut cx, first_num, &arg_names[..argc - 2])?;
 
     let content = {
         if let Ok(img) = source.downcast::<BoxedImage, _>(&mut cx) {
             img.borrow().content.clone()
         } else if let Ok(ctx) = source.downcast::<BoxedContext2D, _>(&mut cx) {
-            Content::from_context(&mut ctx.borrow_mut(), false)
+            Content::from_context(
+                &mut ctx.borrow_mut(),
+                false,
+                cpu_only.unwrap_or(false),
+            )
         } else if let Ok(image_data) = image_data_arg(&mut cx, 1) {
             Content::from_image_data(image_data)
         } else {
@@ -983,7 +998,7 @@ pub fn drawCanvas(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     ];
     let nums = float_args_or_bail_at(&mut cx, 2, &arg_names[..argc - 2])?;
 
-    let content = Content::from_context(&mut context.borrow_mut(), true);
+    let content = Content::from_context(&mut context.borrow_mut(), true, false);
     if let Content::Vector(pict, size) = &content {
         let (src, dst) = _layout_rects(&mut cx, *size, &nums)?;
         let (src, dst) = content.snap_rects_to_bounds(src, dst);

@@ -68,7 +68,7 @@ fn get_image_is_lazy_for_8888_and_f16() -> anyhow::Result<()> {
         ),
     ] {
         let image = recorder(Color4f::new(0.25, 0.5, 0.75, 1.0), &color_space)
-            .get_image(color_type, &color_space)
+            .get_image(color_type, &color_space, true)
             .ok_or_else(|| anyhow::anyhow!("no image for {color_type:?}"))?;
         anyhow::ensure!(
             image.is_lazy_generated(),
@@ -92,11 +92,33 @@ fn get_image_is_lazy_for_8888_and_f16() -> anyhow::Result<()> {
 fn get_image_is_eager_at_other_types() -> anyhow::Result<()> {
     for color_type in [ColorType::RGBAF32, ColorType::RGB888x] {
         let image = recorder(Color4f::new(0.25, 0.5, 0.75, 1.0), &linear())
-            .get_image(color_type, &linear())
+            .get_image(color_type, &linear(), true)
             .ok_or_else(|| anyhow::anyhow!("no image for {color_type:?}"))?;
         anyhow::ensure!(
             !image.is_lazy_generated(),
             "{color_type:?} source is lazy"
+        );
+        anyhow::ensure!(
+            image.color_type() == color_type,
+            "{color_type:?} source is {:?}",
+            image.color_type()
+        );
+    }
+    Ok(())
+}
+
+/// A source that a GPU canvas is involved in is rasterized at the call, on
+/// the CPU, as in 3.7.0: Ganesh would play a lazy picture image back on the
+/// GPU, and its gradients and antialiased edges differ from the CPU raster.
+#[test]
+fn get_image_is_eager_unless_cpu_only() -> anyhow::Result<()> {
+    for color_type in [ColorType::RGBA8888, ColorType::RGBAF16] {
+        let image = recorder(Color4f::new(0.25, 0.5, 0.75, 1.0), &linear())
+            .get_image(color_type, &linear(), false)
+            .ok_or_else(|| anyhow::anyhow!("no image for {color_type:?}"))?;
+        anyhow::ensure!(
+            !image.is_lazy_generated(),
+            "{color_type:?} source with a GPU canvas is lazy"
         );
         anyhow::ensure!(
             image.color_type() == color_type,
@@ -114,7 +136,7 @@ fn get_image_is_eager_at_other_types() -> anyhow::Result<()> {
 #[test]
 fn lazy_f16_source_keeps_linear_blend_and_range() -> anyhow::Result<()> {
     let half_white = recorder(Color4f::new(1.0, 1.0, 1.0, 0.5), &linear())
-        .get_image(ColorType::RGBAF16, &linear())
+        .get_image(ColorType::RGBAF16, &linear(), true)
         .ok_or_else(|| anyhow::anyhow!("no image"))?;
     let [r, g, b, a] = first_pixel(&half_white)?;
     for (value, channel) in [(r, "r"), (g, "g"), (b, "b")] {
@@ -123,7 +145,7 @@ fn lazy_f16_source_keeps_linear_blend_and_range() -> anyhow::Result<()> {
     near(a, 1.0, 1e-3, "a")?;
 
     let extended = recorder(Color4f::new(2.0, 0.5, 0.001, 1.0), &linear())
-        .get_image(ColorType::RGBAF16, &linear())
+        .get_image(ColorType::RGBAF16, &linear(), true)
         .ok_or_else(|| anyhow::anyhow!("no image"))?;
     let [r, g, b, _] = first_pixel(&extended)?;
     near(r, 2.0, 2e-3, "extended r")?;
@@ -140,7 +162,7 @@ fn lazy_f16_source_keeps_linear_blend_and_range() -> anyhow::Result<()> {
 fn lazy_source_is_a_snapshot() -> anyhow::Result<()> {
     let mut recorder = recorder(Color4f::new(1.0, 0.0, 0.0, 1.0), &linear());
     let image = recorder
-        .get_image(ColorType::RGBAF16, &linear())
+        .get_image(ColorType::RGBAF16, &linear(), true)
         .ok_or_else(|| anyhow::anyhow!("no image"))?;
     recorder.append(|canvas| {
         canvas.clear(Color::BLUE);
