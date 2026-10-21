@@ -728,10 +728,14 @@ impl Context2D {
         self.recorder.borrow_mut().get_page_for_export(opts, engine)
     }
 
-    pub fn get_image(&self) -> Option<Image> {
-        self.recorder
-            .borrow_mut()
-            .get_image(self.canvas_color_type, &self.canvas_color_space)
+    /// This canvas as a `drawImage` source; see [`PageRecorder::get_image`]
+    /// for `cpu_only`.
+    pub fn get_image(&self, cpu_only: bool) -> Option<Image> {
+        self.recorder.borrow_mut().get_image(
+            self.canvas_color_type,
+            &self.canvas_color_space,
+            cpu_only,
+        )
     }
 
     pub fn get_picture(&mut self) -> Option<Picture> {

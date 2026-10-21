@@ -75,8 +75,9 @@ the blend result.
   source pixels.
 - Given a GPU `RGBAF32` source canvas, when I `drawImage` it into a CPU
   `RGBAF32` canvas, then extended values and alpha survive.
-- Given an `RGBA8888` or `RGBAF16` canvas A, when I `drawImage(A)`, then A is
-  not rasterized at the call (its image is lazy); an `RGBAF16` A keeps linear
+- Given CPU canvases A (`RGBA8888` or `RGBAF16`) and B, when I `drawImage(A)`
+  into B, then A is not rasterized at the call (its image is lazy); with a GPU
+  canvas on either side A is rasterized at the call on the CPU; an `RGBAF16` A keeps linear
   precision, range and gamut as an `RGBAF32` A does, and drawing on A after the
   call does not change what B shows.
 - Given a `RGBAF32` canvas, when I call `getImageData` with `colorType:
@@ -180,11 +181,14 @@ to succeed, so that the output does not depend on the host.
   set only the output encoding, applied once when pixels are read or encoded.
   The page cache and the export surface cache are valid only for the same
   working space and colour type. `drawImage(canvas)` keeps the source canvas
-  working space and colour type (F32 included). For `RGBA8888`, `BGRA8888` and
-  `RGBAF16` sources the image is a lazy picture image that Skia rasterizes when
-  the destination is rasterized (at export, on the export thread), not at the
-  `drawImage` call (3.7.1; 3.7.0 rasterized every source on the calling thread).
-  Other colour types are rasterized at the call. `getImageData` follows the same
+  working space and colour type (F32 included). When the source and the
+  destination canvas both render on the CPU, an `RGBA8888`, `BGRA8888` or
+  `RGBAF16` source is a lazy picture image that Skia rasterizes when the
+  destination is rasterized (at export, on the export thread), not at the
+  `drawImage` call (3.7.2; 3.7.0 rasterized every source on the calling
+  thread). Other colour types, and sources where either canvas uses the GPU
+  engine, are rasterized at the call on the CPU, so a GPU export keeps 3.7.0's
+  pixels. `getImageData` follows the same
   rule, and `putImageData` writes float `ImageData` unclamped.
 - R1: `toBuffer("raw")` converts to the requested `colorSpace` and
   `colorType`.
