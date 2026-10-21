@@ -609,53 +609,103 @@ describe("Studio compositing paths (contracts/working-space.md W11-W13)", () => 
         },
       };
 
-    let src = cpuCanvas(W, W, LINEAR_F32),
-      sctx = src.getContext("2d");
-    sctx.fillStyle = [0.5, 1.5, 0.25, 0.5];
-    sctx.fillRect(2, 2, 10, 10);
-    let plain = sctx.getImageData(0, 0, W, W, LINEAR_F32);
+    // RGBAF32 sources are rasterized at the call, RGBAF16 ones are lazy (W14)
+    for (const colorType of ["RGBAF32", "RGBAF16"]) {
+      let src = cpuCanvas(W, W, { colorType, colorSpace: "srgb-linear" }),
+        sctx = src.getContext("2d");
+      sctx.fillStyle = [0.5, 1.5, 0.25, 0.5];
+      sctx.fillRect(2, 2, 10, 10);
+      let plain = sctx.getImageData(0, 0, W, W, LINEAR_F32);
 
-    for (const [name, setup] of Object.entries(variants)) {
-      let render = async (source) => {
-        let dst = cpuCanvas(W, W, LINEAR_F32),
-          ctx = dst.getContext("2d");
-        scene(ctx);
-        setup(ctx);
-        ctx.drawImage(source, 0, 0);
-        return floats(await dst.toBuffer("raw", LINEAR_F32));
-      };
-      let fromCanvas = await render(src),
-        fromImageData = await render(plain),
-        worst = fromCanvas.reduce(
-          (max, v, i) => Math.max(max, Math.abs(v - fromImageData[i])),
-          0,
+      for (const [name, setup] of Object.entries(variants)) {
+        let render = async (source) => {
+          let dst = cpuCanvas(W, W, LINEAR_F32),
+            ctx = dst.getContext("2d");
+          scene(ctx);
+          setup(ctx);
+          ctx.drawImage(source, 0, 0);
+          return floats(await dst.toBuffer("raw", LINEAR_F32));
+        };
+        let fromCanvas = await render(src),
+          fromImageData = await render(plain),
+          worst = fromCanvas.reduce(
+            (max, v, i) => Math.max(max, Math.abs(v - fromImageData[i])),
+            0,
+          );
+        assert.ok(worst <= 1e-3, `${colorType} ${name}: max difference ${worst}`);
+      }
+
+      // Blur: drawImage(ImageData) blurs unpremultiplied colour (edges darken),
+      // so it is no reference. A premultiplied blur of a uniform colour keeps
+      // the unpremultiplied colour wherever alpha is not ~0.
+      let blurred = cpuCanvas(W, W, LINEAR_F32),
+        bctx = blurred.getContext("2d");
+      bctx.filter = "blur(2px)";
+      bctx.drawImage(src, 0, 0);
+      let values = floats(await blurred.toBuffer("raw", LINEAR_F32)),
+        centre = (7 * W + 7) * 4,
+        colour = floats(await src.toBuffer("raw", LINEAR_F32)).slice(
+          centre,
+          centre + 3,
+        ),
+        edges = 0;
+      // measured worst deviation: 4.8e-7
+      for (let i = 0; i < values.length; i += 4) {
+        if (values[i + 3] < 0.01) continue;
+        edges += values[i + 3] < 0.49 ? 1 : 0;
+        colour.forEach((v, ch) =>
+          near(values[i + ch], v, 1e-5, `${colorType} blur px${i / 4} ch${ch}`),
         );
-      assert.ok(worst <= 1e-3, `${name}: max difference ${worst}`);
+      }
+      assert.ok(edges > 0, `${colorType}: blur produced partially transparent edge pixels`);
     }
+  });
 
-    // Blur: drawImage(ImageData) blurs unpremultiplied colour (edges darken),
-    // so it is no reference. A premultiplied blur of a uniform colour keeps
-    // the unpremultiplied colour wherever alpha is not ~0.
-    let blurred = cpuCanvas(W, W, LINEAR_F32),
-      bctx = blurred.getContext("2d");
-    bctx.filter = "blur(2px)";
-    bctx.drawImage(src, 0, 0);
-    let values = floats(await blurred.toBuffer("raw", LINEAR_F32)),
-      centre = (7 * W + 7) * 4,
-      colour = floats(await src.toBuffer("raw", LINEAR_F32)).slice(
-        centre,
-        centre + 3,
-      ),
-      edges = 0;
-    // measured worst deviation: 4.8e-7
-    for (let i = 0; i < values.length; i += 4) {
-      if (values[i + 3] < 0.01) continue;
-      edges += values[i + 3] < 0.49 ? 1 : 0;
-      colour.forEach((v, ch) =>
-        near(values[i + ch], v, 1e-5, `blur px${i / 4} ch${ch}`),
-      );
+  // W14: 8-bit and half-float sources are drawn from a lazy picture image
+  // (`PageRecorder::get_image`); the Rust test `get_image_is_lazy_for_8888_and_f16`
+  // asserts the laziness itself, these assert the pixels it produces.
+  test("drawImage of a half-float canvas keeps precision, range and gamut", async () => {
+    const LINEAR_F16 = { colorType: "RGBAF16", colorSpace: "srgb-linear" };
+    let src = greys(PRECISION, LINEAR_F16),
+      direct = floats(await src.toBuffer("raw", LINEAR_F32)),
+      dst = cpuCanvas(PRECISION.length, 1, LINEAR_F32);
+    dst.getContext("2d").drawImage(src, 0, 0);
+    let values = floats(await dst.toBuffer("raw", LINEAR_F32));
+    // equal to the source's own readback: no 8-bit or sRGB step in between
+    direct.forEach((v, i) => near(values[i], v, 1e-6, `px${i >> 2} ch${i & 3}`));
+    PRECISION.forEach((v, i) =>
+      near(values[i * 4], v, Math.max(1e-4, v / 1024), `value ${v}`),
+    );
+
+    const REC2020_F16 = { colorType: "RGBAF16", colorSpace: "rec2020-linear" },
+      expected = mul3(REC2020_TO_709, [0, 1, 0]);
+    let green = cpuCanvas(1, 1, REC2020_F16),
+      gctx = green.getContext("2d");
+    gctx.fillStyle = [0, 1, 0, 1];
+    gctx.fillRect(0, 0, 1, 1);
+    let out = cpuCanvas(1, 1, LINEAR_F32);
+    out.getContext("2d").drawImage(green, 0, 0);
+    let [r, g, b] = floats(await out.toBuffer("raw", LINEAR_F32));
+    [r, g, b].forEach((v, i) => near(v, expected[i], 2e-3, `rec2020 ch${i}`));
+  });
+
+  // W15
+  test("drawImage of a canvas draws the source as it was at the call", async () => {
+    for (const colorType of ["RGBAF16", "RGBA8888", "RGBAF32"]) {
+      let src = cpuCanvas(2, 2, { colorType, colorSpace: "srgb-linear" }),
+        sctx = src.getContext("2d");
+      sctx.fillStyle = [1, 0, 0, 1];
+      sctx.fillRect(0, 0, 2, 2);
+      let dst = cpuCanvas(2, 2, LINEAR_F32);
+      dst.getContext("2d").drawImage(src, 0, 0);
+      sctx.fillStyle = [0, 0, 1, 1];
+      sctx.fillRect(0, 0, 2, 2);
+      let [r, g, b, a] = floats(await dst.toBuffer("raw", LINEAR_F32));
+      near(r, 1, 1e-3, `${colorType} r`);
+      near(g, 0, 1e-3, `${colorType} g`);
+      near(b, 0, 1e-3, `${colorType} b`);
+      near(a, 1, 1e-3, `${colorType} a`);
     }
-    assert.ok(edges > 0, "blur produced partially transparent edge pixels");
   });
 
   // W13

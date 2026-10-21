@@ -7,6 +7,25 @@
 
 <!--## 🥚 ⟩ [Unreleased]-->
 
+## 📦 ⟩ [v3.7.1] (npm) ⟩ October 21, 2026
+
+### Performance
+
+- **`drawImage(canvas)` is lazy again for `RGBA8888`, `BGRA8888` and
+  `RGBAF16` sources.** 3.7.0 rasterized the whole source canvas at the call,
+  on the JS thread, at the source colour type. 3.6.0 recorded a lazy
+  picture-backed image that was rasterized at export, on the export thread
+  pool. 3.7.1 records the lazy image again, now in the source's working
+  colour type and space, so the 3.7.0 colour behaviour (linear blending, half
+  float precision and range, gamut) stays. Skia has no lazy picture image for
+  other colour types, so `RGBAF32` and the rest are still rasterized at the
+  call. Studio's Keyloop render: draw-phase JS time per heavy frame went from
+  about 3 s to 10-20 ms.
+- **A lazy source is rasterized by the engine that exports the destination.**
+  On a CPU export the pixels equal 3.7.0's byte for byte. On a GPU export the
+  source is now rendered on the GPU, as in 3.6.0, where 3.7.0 always rendered
+  it on the CPU; antialiased edges can differ from 3.7.0 by a few code values.
+
 ## 📦 ⟩ [v3.6.0] (npm) / [v0.2.0] (crate) ⟩ May 27, 2026
 
 CanvasKit → phyron-skia-canvas API parity, P0 + P1 (see
