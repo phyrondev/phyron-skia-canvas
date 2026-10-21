@@ -20,7 +20,11 @@
   float precision and range, gamut) stays. Skia has no lazy picture image for
   other colour types, so `RGBAF32` and the rest are still rasterized at the
   call. Studio's Keyloop render: draw-phase JS time per heavy frame went from
-  about 3.7 s to tens of ms.
+  about 3 s to 10-20 ms.
+- **A lazy source is rasterized by the engine that exports the destination.**
+  On a CPU export the pixels equal 3.7.0's byte for byte. On a GPU export the
+  source is now rendered on the GPU, as in 3.6.0, where 3.7.0 always rendered
+  it on the CPU; antialiased edges can differ from 3.7.0 by a few code values.
 
 ## 📦 ⟩ [v3.6.0] (npm) / [v0.2.0] (crate) ⟩ May 27, 2026
 
