@@ -7,6 +7,65 @@
 
 <!--## 🥚 ⟩ [Unreleased]-->
 
+## 📦 ⟩ [v3.7.3] (npm) ⟩ November 4, 2026
+
+### New Features
+
+- **`Canvas.toImage()`** rasterizes the current page now, on the CPU, at the
+  canvas `colorType` and `colorSpace`, and returns an `Image` that owns the
+  pixels. Drawing it pins neither the canvas's recording nor a picture of it,
+  for any colour type or engine, so a chain of intermediate canvases can be
+  cut per step.
+- **`Canvas.release()` and `Image.release()`** drop native memory
+  immediately: the recording, the `getImageData()` surface and the export
+  cache of a canvas, or the pixels of an image. A released canvas throws on
+  drawing, read-back and export; a released image throws on `drawImage()`.
+  Both have a `released` property and are idempotent. Pictures already
+  recorded from a released canvas stay valid.
+- **Native memory is reported to V8** through `napi_adjust_external_memory`:
+  the surface `getImageData()` keeps, the export cache, eager `drawImage`
+  copies pinned in a recording (`RGBAF32` sources, GPU canvases), `toImage()`
+  results and raw-pixel images. The report is per environment, balanced on
+  release and on finalization, so worker threads are safe. The collector now
+  runs when native memory grows, which it never saw before.
+- **`SKIA_CANVAS_CACHE_MB`** sets Skia's raster cache limit (the pixels of
+  lazy `drawImage(canvas)` sources and decoded files between draws). The
+  default rises from Skia's 32 MB to 256 MB, a cap, not a reservation, so a
+  scene that draws the same source canvases more than once does not rasterize
+  them again.
+
+### Fixes
+
+- **`new Canvas(w, h, { gpu: false })` selects the CPU engine.** It used to
+  set only the status flag: the canvas still rendered on the GPU, `.gpu` read
+  `true`, and `drawImage(canvas)` took the eager path. Only the setter
+  `canvas.gpu = false` worked. On a GPU host this changes which engine renders
+  for callers who used the constructor option, so their pixels can move;
+  callers who used the setter, and hosts without a GPU, are unchanged.
+- Regressions from issues #32, #33, #35, #36 and #38: `arc()` and `ellipse()`
+  continue the current subpath; `roundRect()` starts its subpath where the
+  HTML spec does; a non-positive `conicCurveTo()` weight draws a line; path
+  construction is no longer quadratic in the number of segments; `saveLayer`
+  frames survive transform and clip changes, and a full-canvas fill or
+  `clearRect()` inside a layer no longer discards the layer; paragraphs
+  honour `globalAlpha` and `globalCompositeOperation` (a consumer that set
+  them around `drawParagraph()` and compensated elsewhere now applies them
+  twice; check faded text), decorations default to the text colour, and
+  placeholders honour their alignment and baseline;
+  `imageSmoothingQuality = "high"` uses Mitchell only for upscales and
+  trilinear otherwise, as Chrome does (a consumer that asks for `"high"` on
+  every draw sees downscaled images change; Studio does). An export or
+  `getImageData()` that names no `colorSpace` uses the canvas working space
+  (issue #34); pass `colorSpace: "srgb"` to keep sRGB-encoded output from a
+  linear or P3 canvas.
+
+### Documentation
+
+- `docs/api/canvas.md` gains a "Native memory" section: what a
+  `drawImage(canvas)` source retains, which clears start a new recording and
+  which do not, and when `toImage()` and `release()` apply. `externalMemory()`
+  is exported next to `backend()` and reads the reported total.
+
 ## 📦 ⟩ [v3.7.2] (npm) ⟩ October 21, 2026
 
 ### Fixes

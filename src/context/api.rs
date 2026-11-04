@@ -51,6 +51,15 @@ pub fn resetSize(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let parent = parent.borrow();
 
     this.borrow_mut().reset_size((parent.width, parent.height));
+    this.borrow_mut().sync_memory(&mut cx);
+    Ok(cx.undefined())
+}
+
+/// `Canvas.release()`: drop the native memory now, see `Context2D::release`.
+pub fn release(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    let this = cx.argument::<BoxedContext2D>(0)?;
+    this.borrow_mut().release();
+    this.borrow_mut().sync_memory(&mut cx);
     Ok(cx.undefined())
 }
 
@@ -81,6 +90,7 @@ pub fn reset(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let size = this.bounds.size();
 
     this.reset_size(size);
+    this.sync_memory(&mut cx);
     Ok(cx.undefined())
 }
 
@@ -923,6 +933,9 @@ pub fn drawImage(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     };
     let first_num = if cpu_only.is_some() { 3 } else { 2 };
     let argc = cx.len().saturating_sub(first_num - 2);
+    // a canvas source rasterized at the call is pinned by this recording
+    // until it is reset; report it to V8 (`Context2D::pin_bytes`)
+    let from_canvas = cpu_only.is_some();
     let arg_names = [
         "srcX",
         "srcY",
@@ -959,6 +972,10 @@ pub fn drawImage(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         content.snap_rects_to_bounds(src, dst);
         let mut this = this.borrow_mut();
         this.draw_image(img, &src, &dst);
+        if from_canvas && !img.is_lazy_generated() {
+            this.pin_bytes(img.image_info().compute_min_byte_size() as i64);
+            this.sync_memory(&mut cx);
+        }
     } else if let Content::Vector(pict, pict_size) = &content {
         let image = source.downcast_or_throw::<BoxedImage, _>(&mut cx)?;
         let fit_to_canvas = image.borrow().autosized;
@@ -1064,6 +1081,8 @@ pub fn getImageData(mut cx: FunctionContext) -> JsResult<JsBuffer> {
         .get_pixels(crop, opts, engine)
         .or_else(|e| cx.throw_error(e))?;
     let buffer = JsBuffer::from_slice(&mut cx, &data)?;
+    // the read-back keeps a surface of the canvas size: report it
+    this.borrow_mut().sync_memory(&mut cx);
 
     Ok(buffer)
 }

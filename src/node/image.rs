@@ -1,22 +1,33 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
-use crate::{context::Context2D, font_library::FontLibrary, utils::*};
+use crate::{
+    context::{BoxedContext2D, Context2D},
+    font_library::FontLibrary,
+    node::memory::ExternalMemory,
+    utils::*,
+};
 use neon::{prelude::*, types::buffer::TypedArray};
 use skia_safe::{
     AlphaType, ColorSpace, ColorType, Data, FontMgr, ISize, Image as SkImage,
     ImageInfo, Picture, PictureRecorder, Rect, Size,
-    image::images,
+    image::{CachingHint, images},
     svg::{self, Length, LengthUnit},
 };
 use std::cell::RefCell;
 
 pub type BoxedImage = JsBox<RefCell<Image>>;
-impl Finalize for Image {}
+impl Finalize for Image {
+    fn finalize<'a, C: Context<'a>>(mut self, cx: &mut C) {
+        self.memory.clear(cx);
+    }
+}
 
 pub struct Image {
     src: String,
     pub autosized: bool,
     pub content: Content,
+    /// Native bytes reported to V8 for this image (`node::memory`).
+    memory: ExternalMemory,
 }
 
 impl Default for Image {
@@ -25,7 +36,18 @@ impl Default for Image {
             content: Content::Loading,
             autosized: false,
             src: "".to_string(),
+            memory: ExternalMemory::default(),
         }
+    }
+}
+
+impl Image {
+    /// Report the raster this image owns to V8. Decoded files and SVGs are
+    /// lazy or vector and own no raster until drawn; raw pixels and canvas
+    /// snapshots (`Canvas.toImage`) do.
+    pub fn sync_memory<'a>(&mut self, cx: &mut impl Context<'a>) {
+        let owned = self.content.raster_bytes();
+        self.memory.sync(cx, owned);
     }
 }
 
@@ -86,6 +108,18 @@ impl Content {
 
     pub fn is_complete(&self) -> bool {
         !matches!(self, Content::Loading)
+    }
+
+    /// Bytes of raster this content owns: a materialized bitmap's pixels.
+    /// A lazy (deferred decode or picture) image owns nothing until drawn,
+    /// and a vector picture is a display list.
+    pub fn raster_bytes(&self) -> i64 {
+        match self {
+            Content::Bitmap(img) if !img.is_lazy_generated() => {
+                img.image_info().compute_min_byte_size() as i64
+            }
+            _ => 0,
+        }
     }
 
     pub fn is_drawable(&self) -> bool {
@@ -173,6 +207,46 @@ impl ImageData {
 pub fn new(mut cx: FunctionContext) -> JsResult<BoxedImage> {
     let this = RefCell::new(Image::default());
     Ok(cx.boxed(this))
+}
+
+/// `Canvas.toImage()`: a raster snapshot of a canvas, taken now, on the CPU,
+/// at the canvas working colour type and space. The image owns its pixels,
+/// so drawing it pins neither the canvas's recording nor a picture of it,
+/// whatever the colour type or engine.
+pub fn from_canvas(mut cx: FunctionContext) -> JsResult<BoxedImage> {
+    let ctx = cx.argument::<BoxedContext2D>(1)?;
+    // Take the lazy image where one exists and rasterize it through Skia's
+    // own generator, so the pixels are the ones a CPU `drawImage(canvas)`
+    // draws, byte for byte (an eager raster of the same picture differs by
+    // a code value here and there at 8 bits). Other colour types are
+    // rasterized eagerly, as `drawImage` rasterizes them.
+    let content =
+        match Content::from_context(&mut ctx.borrow_mut(), false, true) {
+            Content::Bitmap(image) if image.is_lazy_generated() => image
+                .make_raster_image(None, CachingHint::Disallow)
+                .map(Content::Bitmap)
+                .unwrap_or(Content::Broken),
+            content @ Content::Bitmap(_) => content,
+            // a canvas that cannot be snapshotted (0x0) is a broken image,
+            // not one that never finishes loading
+            _ => Content::Broken,
+        };
+    let mut image = Image {
+        content,
+        ..Image::default()
+    };
+    image.sync_memory(&mut cx);
+    Ok(cx.boxed(RefCell::new(image)))
+}
+
+/// `Image.release()`: drop the pixels now. The image reads as broken
+/// afterwards; the JS side refuses to draw it.
+pub fn release(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    let this = cx.argument::<BoxedImage>(0)?;
+    let mut this = this.borrow_mut();
+    this.content = Content::Broken;
+    this.sync_memory(&mut cx);
+    Ok(cx.undefined())
 }
 
 pub fn get_src(mut cx: FunctionContext) -> JsResult<JsString> {
@@ -276,6 +350,7 @@ pub fn set_data<'a>(
         this.content = Content::Broken
     }
 
+    this.sync_memory(&mut cx);
     Ok(cx.boolean(this.content.is_drawable()))
 }
 

@@ -124,6 +124,19 @@ The `.onerror` function will be called with a reference to the [Error][js_error]
 
 ## Methods
 
+### `release()`
+
+```js
+release();
+```
+
+Drops the image's pixels now instead of waiting for the garbage collector. The
+image cannot be drawn afterwards (`drawImage()` throws); `released` reads
+`true`. Calling it twice is fine. Mostly useful for the images
+[`Canvas.toImage()`][toImage] returns, which own a full raster of the canvas.
+
+[toImage]: canvas.md#toimage
+
 ### `decode()`
 
 ```js returns="Promise<Image>"

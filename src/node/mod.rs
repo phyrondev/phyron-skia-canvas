@@ -15,6 +15,7 @@ pub mod gradient;
 pub mod image;
 pub mod image_filter;
 pub mod mask_filter;
+pub mod memory;
 pub mod paragraph;
 pub mod path;
 pub mod pattern;

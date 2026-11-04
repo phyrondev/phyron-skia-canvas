@@ -386,8 +386,14 @@ createImageData(width, height, {colorType="rgba", colorSpace="srgb"})
 createImageData(imagedata)
 
 getImageData(sx, sy, sw, sh)
-getImageData(sx, sy, sw, sh, {colorType="rgba", colorSpace="srgb", density, matte, msaa})
+getImageData(sx, sy, sw, sh, {colorType="rgba", colorSpace, density, matte, msaa})
 ```
+
+`getImageData()` without a `colorSpace` reads back the canvas working space
+(since 3.7.3; it was `"srgb"` before). On a linear or P3 canvas, pass
+`colorSpace: "srgb"` to keep sRGB-encoded bytes, and prefer a float
+`colorType` for a linear read-back, since 8-bit linear values band in the
+darks.
 
 These methods behave identically to the standard [createImageData()][createImageData()] and [getImageData()][getImageData()] methods but have been extended to also accept an optional `colorType` value in their settings argument. The `colorType` defines the arrangement of individual color components in the ImageData's pixel array. If omitted, the type will default to `"rgba"`, but any of the [supported color types][imgdata_colortype] can be specified instead.
 
@@ -408,6 +414,8 @@ drawImage(img, srcX, srcY, srcWidth, srcHeight, x, y, width, height);
 ```
 
 This method behaves identically to the standard [`drawImage()`][drawImage()] function, but accepts ImageData objects as well as Image and Canvas objects as its first argument.
+
+A Canvas argument is retained by this context's recording until the context is rasterized and reset. See [Native memory](canvas.md#native-memory) for what that holds onto and when to use [`Canvas.toImage()`](canvas.md#toimage) instead.
 
 :::info[Note]
 Image objects loaded from SVG files that don't have an [intrinsic size][img_size] have some behavioral quirks to keep in mind when drawing:

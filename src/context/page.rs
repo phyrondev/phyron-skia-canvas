@@ -93,6 +93,14 @@ impl PageRecorder {
         *self = PageRecorder::new(bounds);
     }
 
+    /// Bytes of raster this recorder owns: the persistent surface that
+    /// `getImageData` keeps, and the export cache snapshot. The recorded
+    /// pictures are not counted: they are display lists, and the rasters they
+    /// reference are shared with their owners.
+    pub fn native_bytes(&mut self) -> i64 {
+        self.surface.bytes() + PageCache::bytes(self.id)
+    }
+
     pub fn update_bounds(&mut self, bounds: Rect) {
         self.bounds = bounds; // non-destructively update the size
     }
@@ -224,8 +232,13 @@ impl PageRecorder {
                 self.layers.push(pict)
             }
 
-            // resume recording
+            // resume recording. Finishing the recording closed any open
+            // `saveLayer` (Skia balances the save stack), so the new canvas
+            // starts at depth 1 with no layer floors: a canvas rasterized
+            // inside an open layer has that layer flattened at this point.
             self.current.begin_recording(self.bounds, true);
+            self.base_depth = 1;
+            self.layer_floors.clear();
             self.changed = false;
             self.restore();
         }
@@ -354,6 +367,14 @@ impl Default for RecordingSurface {
 }
 
 impl RecordingSurface {
+    /// Bytes of the persistent surface, or 0 without one.
+    pub fn bytes(&mut self) -> i64 {
+        self.surface
+            .as_mut()
+            .map(|surface| surface.image_info().compute_min_byte_size() as i64)
+            .unwrap_or(0)
+    }
+
     fn is_surface_stale(
         &mut self,
         page: &Page,
@@ -1031,6 +1052,18 @@ impl PageCache {
 
     pub fn drop(id: usize) {
         Self::shared().remove(&id);
+    }
+
+    /// Bytes of the cached snapshot for page `id`, or 0.
+    pub fn bytes(id: usize) -> i64 {
+        Self::shared()
+            .get(&id)
+            .and_then(|cache| {
+                cache.image.as_ref().map(|image| {
+                    image.image_info().compute_min_byte_size() as i64
+                })
+            })
+            .unwrap_or(0)
     }
 
     pub fn get(

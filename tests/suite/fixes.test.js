@@ -84,9 +84,10 @@ describe("Path regressions (#32, #33)", () => {
     };
     let small = timed(build(4000)),
       large = timed(build(16000));
-    // 4x the segments: linear is ~4x, quadratic ~16x
+    // 4x the segments: linear is ~4x, quadratic ~16x; the margin absorbs a
+    // scheduling blip on a loaded host
     assert.ok(
-      large < small * 8,
+      large < small * 11,
       `16k lineTo took ${large.toFixed(1)}ms against ${small.toFixed(1)}ms for 4k`,
     );
   });

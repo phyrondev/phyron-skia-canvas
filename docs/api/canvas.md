@@ -88,6 +88,11 @@ The main scenario in which you should consider disabling the `gpu` is when you a
 
 ### `.gpu`
 
+The constructor's `gpu` option and this property select the same thing: `new
+Canvas(w, h, { gpu: false })` renders on the CPU and reads `false` here. Before
+3.7.3 the constructor option only changed the status report, and such a canvas
+still rendered on the GPU.
+
 The `.gpu` attribute allows you to control whether rendering occurs on the graphics card or uses the CPU. Rendering is hardware accelerated by default, using [Metal](https://developer.apple.com/metal/) on macOS and [Vulkan](https://www.vulkan.org) on Linux and Windows. To use software-based rendering, set the `.gpu` property to `false`. If the current platform doesn't support GPU-based rendering, the property will be `false` by default (see [this article](https://linuxconfig.org/install-and-test-vulkan-on-linux) for some tips on getting Vulkan working on Linux).
 
 ### `.engine`
@@ -113,6 +118,44 @@ These properties are syntactic sugar for calling the `toBuffer()` method. Each r
 
 ---
 
+## Native memory
+
+A `Canvas` is a small JavaScript object in front of native Skia memory: the
+recording of what has been drawn, a full-size surface once `getImageData()`
+has been called, and a cached raster after an export. V8 does not see that
+memory as its own, so a process can hold gigabytes of canvases at a small JS
+heap. Since 3.7.3 the library reports what each canvas and image owns to V8
+through Node-API's external-memory counter, so the garbage collector runs
+when native memory grows. `externalMemory()`, exported next to `backend()`,
+reads that counter for the current thread (`process.memoryUsage().external`
+does not include it on current Node versions). Two methods free memory
+without waiting for the collector: [`release()`](#release) and
+[`toImage()`](#toimage).
+
+### What a `drawImage(canvas)` source retains
+
+When both canvases render on the CPU, `drawImage(canvasA)` into `canvasB`
+does not copy A's pixels. B records a lazy picture of A as it is at the call,
+and rasterizes it when B itself is rasterized (an export, `getImageData()`, or
+B being drawn into a third canvas). Until then B's recording keeps A's picture
+alive, with everything A's drawing referenced. The picture is a display list,
+not pixels, so this is cheap per call, but a long chain of intermediate
+canvases is retained in full until the last one is rasterized.
+
+B's recording only grows. Rasterizing B does not shorten it; only setting
+`width` or `height`, `ctx.reset()` or `release()` starts a new one. A
+`clearRect()` or an opaque fill that covers the whole canvas under the current
+transform, with no clip, filter or open layer, also starts a new one. Any
+other `clearRect()` is recorded on top of what A drew before, so a canvas
+reused across many samples with a partial clear replays all of them each time
+it is rasterized. Reset it with `canvas.width = canvas.width` to be sure.
+
+If either canvas uses the GPU engine, or A's `colorType` has no lazy form
+(anything but `rgba`, `bgra` and `RGBAF16`), `drawImage(canvasA)` rasterizes
+A at the call, on the CPU, and B's recording pins that copy, at A's bytes per
+pixel, until B is reset. [`toImage()`](#toimage) gives the same copy as an
+object you can draw repeatedly and release.
+
 ## Methods
 
 ### `newPage()`
@@ -124,6 +167,48 @@ newPage(width, height);
 This method allows for the creation of additional drawing contexts that are fully independent of one another but will be part of the same output batch. It is primarily useful in the context of creating a multi-page PDF but can be used to create multi-file image-sequences in other formats as well. Creating a new page with a different size than the previous one will update the parent Canvas object’s `.width` and `.height` attributes but will not affect any other pages that have been created previously.
 
 The method’s return value is a `CanvasRenderingContext2D` object which you can either save a reference to or recover later from the `.pages` array.
+
+### `toImage()`
+
+```js returns="Image"
+toImage();
+```
+
+Rasterizes the current page now, on the CPU, at the canvas `colorType` and
+`colorSpace`, and returns an [Image][image] that owns the pixels. Drawing that
+image into another canvas pins neither this canvas's recording nor a picture
+of it, whatever the colour type or engine, so an intermediate canvas can be
+snapshotted, drawn, and released per step:
+
+```js
+let sample = new Canvas(1920, 1080, { colorType: "RGBAF16", colorSpace: "srgb-linear" });
+// ... draw the sample ...
+let image = sample.toImage();
+sample.release();
+accumulator.getContext("2d").drawImage(image, 0, 0);
+image.release(); // once the accumulator has been rasterized or you are done
+```
+
+The pixels equal what `drawImage(canvas)` draws on the CPU. Later drawing on
+the canvas does not change the image.
+
+### `release()`
+
+```js
+release();
+```
+
+Drops the canvas's native memory immediately: the recording, the surface
+`getImageData()` keeps, and the export cache. Drawing on its context, reading
+it back and exporting it throw afterwards; `width`, `height`, `gpu`,
+`colorType` and `colorSpace` still read. Calling it twice is fine.
+
+Pictures of this canvas that other canvases recorded through `drawImage()`
+stay valid: they hold their own reference and are rasterized as usual.
+
+[`Image`][image] has a `release()` as well.
+
+[image]: image.md
 
 ### `toFile()`
 

@@ -302,16 +302,16 @@ fn parse_blend_mode(cx: &mut FunctionContext, idx: usize) -> BlendMode {
                 "clear" => BlendMode::Clear,
                 "src" | "source" => BlendMode::Src,
                 "dst" | "destination" => BlendMode::Dst,
-                "srcOver" | "src-over" | "source-over" => BlendMode::SrcOver,
-                "dstOver" | "dst-over" | "destination-over" => {
+                "srcover" | "src-over" | "source-over" => BlendMode::SrcOver,
+                "dstover" | "dst-over" | "destination-over" => {
                     BlendMode::DstOver
                 }
-                "srcIn" | "src-in" | "source-in" => BlendMode::SrcIn,
-                "dstIn" | "dst-in" | "destination-in" => BlendMode::DstIn,
-                "srcOut" | "src-out" | "source-out" => BlendMode::SrcOut,
-                "dstOut" | "dst-out" | "destination-out" => BlendMode::DstOut,
-                "srcATop" | "src-atop" | "source-atop" => BlendMode::SrcATop,
-                "dstATop" | "dst-atop" | "destination-atop" => {
+                "srcin" | "src-in" | "source-in" => BlendMode::SrcIn,
+                "dstin" | "dst-in" | "destination-in" => BlendMode::DstIn,
+                "srcout" | "src-out" | "source-out" => BlendMode::SrcOut,
+                "dstout" | "dst-out" | "destination-out" => BlendMode::DstOut,
+                "srcatop" | "src-atop" | "source-atop" => BlendMode::SrcATop,
+                "dstatop" | "dst-atop" | "destination-atop" => {
                     BlendMode::DstATop
                 }
                 "xor" => BlendMode::Xor,
@@ -321,10 +321,10 @@ fn parse_blend_mode(cx: &mut FunctionContext, idx: usize) -> BlendMode {
                 "overlay" => BlendMode::Overlay,
                 "darken" => BlendMode::Darken,
                 "lighten" => BlendMode::Lighten,
-                "colorDodge" | "color-dodge" => BlendMode::ColorDodge,
-                "colorBurn" | "color-burn" => BlendMode::ColorBurn,
-                "hardLight" | "hard-light" => BlendMode::HardLight,
-                "softLight" | "soft-light" => BlendMode::SoftLight,
+                "colordodge" | "color-dodge" => BlendMode::ColorDodge,
+                "colorburn" | "color-burn" => BlendMode::ColorBurn,
+                "hardlight" | "hard-light" => BlendMode::HardLight,
+                "softlight" | "soft-light" => BlendMode::SoftLight,
                 "difference" => BlendMode::Difference,
                 "exclusion" => BlendMode::Exclusion,
                 "multiply" => BlendMode::Multiply,

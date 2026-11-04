@@ -1,6 +1,9 @@
 #![allow(non_snake_case)]
 use crate::{
-    context::page::{ExportOptions, pages_arg},
+    context::{
+        BoxedContext2D,
+        page::{ExportOptions, pages_arg},
+    },
     gpu,
     utils::*,
 };
@@ -41,7 +44,10 @@ impl Canvas {
             color_type,
             color_space,
             fallback: gpu::FallbackCell::default(),
-            engine: None,
+            // `{ gpu: false }` selects the CPU engine here. It used to set only
+            // the flag, so the canvas still rendered on the GPU and `.gpu`
+            // read `true` while the status claimed the CPU.
+            engine: gpu_disabled.then_some(gpu::RenderingEngine::CPU),
         }
     }
 
@@ -210,11 +216,26 @@ pub fn get_engine_status(mut cx: FunctionContext) -> JsResult<JsString> {
     Ok(cx.string(details.to_string()))
 }
 
+/// Report the pages' native memory once the export has been set up: the
+/// sync exports have filled their caches by then; the async ones fill them on
+/// the worker and are reported at the next entry point
+/// (`Context2D::sync_memory`).
+fn sync_pages_memory(cx: &mut FunctionContext, idx: usize) -> NeonResult<()> {
+    let contexts = cx.argument::<JsArray>(idx)?.to_vec(cx)?;
+    for obj in contexts {
+        if let Ok(ctx) = obj.downcast::<BoxedContext2D, _>(cx) {
+            ctx.borrow_mut().sync_memory(cx);
+        }
+    }
+    Ok(())
+}
+
 pub fn toBuffer(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let this = cx.argument::<BoxedCanvas>(0)?;
     let options = export_options_arg(&mut cx, 2)?;
     let options = this.borrow().in_working_space(options);
     let mut pages = pages_arg(&mut cx, 1, &options, &this)?;
+    sync_pages_memory(&mut cx, 1)?;
 
     // ensure cached bitmaps are sendable to other thread
     pages.materialize(&this.borrow_mut().engine(), &options);
@@ -253,6 +274,7 @@ pub fn toBufferSync(mut cx: FunctionContext) -> JsResult<JsValue> {
             pages.first().encoded_as(options, pages.engine)
         }
     };
+    sync_pages_memory(&mut cx, 1)?;
 
     match encoded {
         Ok(data) => {
@@ -271,6 +293,7 @@ pub fn save(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let options = export_options_arg(&mut cx, 4)?;
     let options = this.borrow().in_working_space(options);
     let mut pages = pages_arg(&mut cx, 1, &options, &this)?;
+    sync_pages_memory(&mut cx, 1)?;
 
     // ensure cached bitmaps are sendable to other thread
     pages.materialize(&this.borrow_mut().engine(), &options);
@@ -305,6 +328,7 @@ pub fn saveSync(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let options = export_options_arg(&mut cx, 4)?;
     let options = this.borrow().in_working_space(options);
     let pages = pages_arg(&mut cx, 1, &options, &this)?;
+    sync_pages_memory(&mut cx, 1)?;
 
     let result = {
         if sequence {

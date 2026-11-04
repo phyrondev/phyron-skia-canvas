@@ -147,6 +147,8 @@ fn backend(mut cx: FunctionContext) -> JsResult<JsString> {
 #[cfg(feature = "node-addon")]
 #[neon::main]
 fn main(mut cx: ModuleContext) -> NeonResult<()> {
+    use skia_safe::graphics::set_resource_cache_total_bytes_limit;
+
     // initialize thread pool w/ non-default size if requested
     if let Ok(value) = std::env::var("SKIA_CANVAS_THREADS")
         && let Ok(num) = value.parse::<usize>()
@@ -156,6 +158,17 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     {
         eprintln!("Warning: failed to set custom thread pool size: {}", e);
     }
+
+    // Skia's raster cache holds the pixels of lazy images (`drawImage` of a
+    // CPU canvas, decoded files) between draws. Its 32 MB default evicts a
+    // few full-frame sources, so a scene that draws the same source canvases
+    // more than once rasterizes them again. 256 MB is a cap, not a
+    // reservation; `SKIA_CANVAS_CACHE_MB` overrides it.
+    let cache_mb = std::env::var("SKIA_CANVAS_CACHE_MB")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(256);
+    set_resource_cache_total_bytes_limit(cache_mb.saturating_mul(1024 * 1024));
 
     // -- Image -------------------------------------------------------------------------------------
 
@@ -167,6 +180,9 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("Image_get_height", node::image::get_height)?;
     cx.export_function("Image_get_complete", node::image::get_complete)?;
     cx.export_function("Image_pixels", node::image::pixels)?;
+    cx.export_function("Image_from_canvas", node::image::from_canvas)?;
+    cx.export_function("externalMemory", node::memory::external_memory)?;
+    cx.export_function("Image_release", node::image::release)?;
 
     // -- Path2D ------------------------------------------------------------------------------------
 
@@ -479,6 +495,7 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("CanvasRenderingContext2D_get_size", ctx::get_size)?;
     cx.export_function("CanvasRenderingContext2D_set_size", ctx::set_size)?;
     cx.export_function("CanvasRenderingContext2D_reset", ctx::reset)?;
+    cx.export_function("CanvasRenderingContext2D_release", ctx::release)?;
 
     // grid state
     cx.export_function("CanvasRenderingContext2D_save", ctx::save)?;

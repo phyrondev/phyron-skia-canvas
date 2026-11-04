@@ -244,6 +244,15 @@ export class Image extends EventEmitter {
   onerror: ((this: Image, error: Error) => any) | null;
   complete: boolean;
   decode(): Promise<Image>;
+  /**
+   * Drops the image's pixels now instead of waiting for the garbage
+   * collector. The image cannot be drawn afterwards.
+   *
+   * [Skia Canvas Docs](https://skia-canvas.org/api/image#release)
+   */
+  release(): void;
+  /** `true` once `release()` has been called. */
+  readonly released: boolean;
 }
 
 //
@@ -490,6 +499,14 @@ export interface BackendInfo {
  */
 export function backend(): BackendInfo;
 
+/**
+ * Native memory reported to V8 for the current thread, in bytes: the surfaces
+ * `getImageData()` keeps, export caches, `toImage()` results and eager
+ * `drawImage` copies, from this library and anything else on the same
+ * Node-API counter. Falls on `release()` and garbage collection.
+ */
+export function externalMemory(): number;
+
 export interface TextOptions {
   /** Amount of additional contrast to add when rendering text (defaults to 0) */
   textContrast?: number;
@@ -547,6 +564,25 @@ export class Canvas {
   toFile(filename: string, options?: SaveOptions): Promise<void>;
   /** [Skia Canvas Docs](https://skia-canvas.org/api/canvas#tobuffer) */
   toBuffer(format: ExportFormat, options?: ExportOptions): Promise<Buffer>;
+  /**
+   * Rasterizes the current page now, on the CPU, at the canvas `colorType`
+   * and `colorSpace`, as an `Image` that owns its pixels. Drawing it pins
+   * neither this canvas's recording nor a picture of it.
+   *
+   * [Skia Canvas Docs](https://skia-canvas.org/api/canvas#toimage)
+   */
+  toImage(): Image;
+  /**
+   * Drops the canvas's native memory now: the recording, the surface
+   * `getImageData()` keeps and the export cache. Drawing, read-back and
+   * export throw afterwards; `width`, `height`, `gpu` and the colour
+   * properties still read.
+   *
+   * [Skia Canvas Docs](https://skia-canvas.org/api/canvas#release)
+   */
+  release(): void;
+  /** `true` once `release()` has been called. */
+  readonly released: boolean;
   /** [Skia Canvas Docs](https://skia-canvas.org/api/canvas#tourl) */
   toURL(format: ExportFormat, options?: ExportOptions): Promise<string>;
   /** [Skia Canvas Docs](https://skia-canvas.org/api/canvas#tosharp) */

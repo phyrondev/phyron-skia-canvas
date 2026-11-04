@@ -895,7 +895,6 @@ pub fn points_arg(
         ))
     } else {
         let points = nums
-            .as_slice()
             .chunks_exact(2)
             .map(|pair| Point::new(pair[0], pair[1]))
             .collect();

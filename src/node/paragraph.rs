@@ -118,13 +118,16 @@ fn parse_text_style(
         && let Some((color4f, cs)) = color4f_in(cx, color_val)
     {
         let mut paint = Paint::default();
+        // same rule as `decorationColor` below: a tagged colour is already
+        // encoded, an untagged float array is linear
+        text_color = Some(if cs.is_some() {
+            color4f.to_color()
+        } else {
+            linear_color4f_to_srgb_color(&color4f)
+        });
         let cs = cs.unwrap_or_else(ColorSpace::new_srgb_linear);
         paint.set_color4f(color4f, Some(&cs));
         style.set_foreground_paint(&paint);
-        text_color = Some(match cs.is_srgb() {
-            true => color4f.to_color(),
-            false => linear_color4f_to_srgb_color(&color4f),
-        });
     }
     if let Ok(color_val) = obj.get::<JsValue, _, _>(cx, "foregroundColor")
         && let Some((color4f, cs)) = color4f_in(cx, color_val)
@@ -560,7 +563,6 @@ pub fn addPlaceholder(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         alignment,
         baseline,
         baseline_offset: offset,
-        ..PlaceholderStyle::default()
     };
 
     let mut this = this.borrow_mut();

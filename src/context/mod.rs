@@ -28,6 +28,7 @@ use crate::{
     node::{
         filter::{Filter, SamplingFilter, SamplingQuality, ScalingOperation},
         image::ImageData,
+        memory::ExternalMemory,
         shader::BoxedShader,
     },
     pattern::{BoxedCanvasPattern, CanvasPattern},
@@ -41,7 +42,11 @@ const BLACK: Color = Color::BLACK;
 const TRANSPARENT: Color = Color::TRANSPARENT;
 
 pub type BoxedContext2D = JsBox<RefCell<Context2D>>;
-impl Finalize for Context2D {}
+impl Finalize for Context2D {
+    fn finalize<'a, C: Context<'a>>(mut self, cx: &mut C) {
+        self.memory.clear(cx);
+    }
+}
 
 pub struct Context2D {
     pub bounds: Rect,
@@ -59,6 +64,12 @@ pub struct Context2D {
     /// matching `canvas.restore()` to composite the layer.
     layers: Vec<bool>,
     path: PathBuilder,
+    /// Native bytes reported to V8 for this context (`node::memory`).
+    memory: ExternalMemory,
+    /// Bytes of eager raster copies `drawImage` recorded from other canvases
+    /// (`RGBAF32` sources, or either canvas on the GPU). They live in the
+    /// recording until it is reset, so they are this context's to report.
+    pinned_bytes: i64,
 }
 
 #[derive(Clone)]
@@ -261,7 +272,32 @@ impl Context2D {
             stack: vec![],
             layers: vec![],
             state: State::default(),
+            memory: ExternalMemory::default(),
+            pinned_bytes: 0,
         }
+    }
+
+    /// Report what this context owns natively to V8: the recorder's rasters
+    /// plus the eager copies pinned in the recording. Called from the JS
+    /// entry points that can change either, so the report tracks reality
+    /// without a timer; the finalizer takes the remainder back.
+    pub fn sync_memory<'a>(&mut self, cx: &mut impl Context<'a>) {
+        let owned =
+            self.recorder.borrow_mut().native_bytes() + self.pinned_bytes;
+        self.memory.sync(cx, owned);
+    }
+
+    /// Note `bytes` of eager raster that `drawImage` just recorded.
+    pub fn pin_bytes(&mut self, bytes: i64) {
+        self.pinned_bytes += bytes.max(0);
+    }
+
+    /// Drop everything this context holds natively: the recording with the
+    /// rasters it pins, the persistent surface and the export cache entry.
+    /// Drawing state goes with it, as for `reset()`; the JS side makes the
+    /// canvas throw on further use.
+    pub fn release(&mut self) {
+        self.reset_size(self.bounds.size());
     }
 
     pub fn in_local_coordinates(&mut self, x: f32, y: f32) -> Point {
@@ -387,7 +423,8 @@ impl Context2D {
         self.layers = vec![];
         self.state = State::default();
 
-        // erase any existing content
+        // erase any existing content, and with it the eager copies it pinned
+        self.pinned_bytes = 0;
         self.with_recorder(|mut recorder| {
             recorder.set_bounds(self.bounds);
         });
@@ -544,7 +581,8 @@ impl Context2D {
             && path.conservatively_contains_rect(self.bounds)
         {
             // ...erase existing vector content layers (but preserve CTM & clip
-            // path)
+            // path), and with them the eager copies they pinned
+            self.pinned_bytes = 0;
             self.with_recorder(|mut recorder| {
                 recorder.set_bounds(self.bounds);
                 recorder.set_matrix(self.state.matrix);
@@ -703,12 +741,15 @@ impl Context2D {
             && self.state.matrix.map_rect(rect).0.contains(self.bounds)
         {
             // if rect fully encloses canvas, erase existing content (but
-            // preserve CTM & clip path)
-            true => self.with_recorder(|mut recorder| {
-                recorder.set_bounds(self.bounds);
-                recorder.set_matrix(self.state.matrix);
-                recorder.set_clip(&self.state.clip);
-            }),
+            // preserve CTM & clip path), and the eager copies it pinned
+            true => {
+                self.pinned_bytes = 0;
+                self.with_recorder(|mut recorder| {
+                    recorder.set_bounds(self.bounds);
+                    recorder.set_matrix(self.state.matrix);
+                    recorder.set_clip(&self.state.clip);
+                })
+            }
 
             // otherwise, paint over the specified region but preserve overdrawn
             // vectors
@@ -770,7 +811,7 @@ impl Context2D {
         // canvas transform counts as well as the src -> dst fit (issue #38)
         let scaling = ScalingOperation::for_matrix(&Matrix::concat(
             &self.state.matrix,
-            &Matrix::rect_to_rect(*src_rect, *dst_rect, None)
+            &Matrix::rect_2_rect(*src_rect, *dst_rect, None)
                 .unwrap_or_else(Matrix::new_identity),
         ));
         self.render_to_canvas(&paint, |canvas, paint| {
