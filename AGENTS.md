@@ -67,6 +67,24 @@ Project-specific specs live in `specs/`. Shared rules and templates live in
 
 The rules below override or extend blueprint rules where this project differs.
 
+## Workflow Rules
+
+Moritz's standing rules for agents in this repository. They hold on every machine; agent memory does not travel.
+
+- **Commit and push without asking** once work is verified. Do not GPG-sign: `git -c commit.gpgsign=false commit`. A rebase can still stop on signing; commit the staged pick with `--no-gpg-sign` and continue.
+- **No PRs on weekends:** commit and push branches, but do not open, merge or push PRs on Saturday or Sunday unless Moritz asks.
+- **Prose** (commits, PRs, comments, docs): ASCII only, `--` instead of em and en dashes, no spaces around `/`. No Claude or Anthropic co-author trailer and no "Generated with Claude Code" footer; Moritz authors the commits.
+- **`gh` needs the repo named:** this clone also has an `upstream` remote (samizdatco). Pass `-R phyrondev/phyron-skia-canvas`, or run `gh repo set-default phyrondev/phyron-skia-canvas` once per clone.
+- **Build locally before pushing;** CI is for the OS matrix. `rust-ci.yml` runs on PRs; the Node test matrix (macOS, Windows, Ubuntu x Node 18, 24) runs only on request: `gh workflow run test.yml --ref <branch>`.
+- **Benchmarks use release builds** (`npm run build`); dev builds render about 6x slower.
+- **One `target/` directory:** switch branches in place (`git switch`), not with `git worktree add`; never run two cargo builds on it at once.
+- **`Cargo.lock` is not tracked** (library crate); leave it on disk. After switching between branches with different `skia-safe` versions, a stale lock can mix `syn` versions in `bindgen` (`syn::File: ParseQuote` not satisfied); `cargo generate-lockfile` fixes it.
+- **`.gitignore` is a denylist:** `/*.*` ignores every root file with an extension except an allowlist; a new root config file needs `!/<file>`.
+- **rustfmt is pinned** to `nightly-2026-05-25` (`rustfmt.toml` uses nightly-only options): `cargo +nightly-2026-05-25 fmt`.
+- **Accessors** have no `get_` prefix; boolean properties read `is_*`/`has_*`. This covers the crate-root Rust API; the Neon bindings in `src/node/` keep their JS-shaped names.
+- **Skia bumps:** regenerate `containers/use-static-fontconfig.patch` against the new rust-skia tag (`patch -p1 --dry-run` must exit 0 with no fuzz). Skia m157 does not link with `freetype-woff2` (its brotli `BUILD.gn` misses `c/dec/prefix.c`); see `scripts/release-3.7.3/HANDOFF.md` on the `skia-m157` branch.
+- **Releases** (details in [`docs/node.md`](docs/node.md)): an agent may run `just release` and watch `build.yml`; Moritz runs `just publish` himself, because `npm publish` needs his passkey in the browser. Studio's golden suite runs when the new version reaches Studio staging; it does not gate the publish.
+
 ## CRITICAL: Git Safety
 
 **NEVER use `git reset --hard`, `git checkout --`, `git clean`, or any destructive git command without FIRST running `git stash`!**
