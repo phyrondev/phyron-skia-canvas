@@ -68,3 +68,19 @@ Not yet run: the 32 MB-cache variant (separates the cache's share of the speedup
 - Compare raw exports premultiplied; unpremultiplied near-transparent pixels swing by 255.
 - `new Canvas(w, h, { gpu: false })` only works from `dbbd35a8` on; for 3.7.2 comparisons set `canvas.gpu = false`.
 - Studio sessions on the old machine: studio-7b (dep, golden suite), studio-9b (production OOM). They will not be reachable from the new machine.
+
+## Standing rules from the old machine's agent memory
+
+That memory stayed on the old machine; these are the parts that apply anywhere.
+
+- **Prose (commits, PRs, comments, docs):** no spaces around `/`; `--` instead of em/en dashes; ASCII only. Never add a Claude/Anthropic co-author trailer or a "Generated with Claude Code" footer -- Moritz authors the commits.
+- **No PRs on weekends:** commit and push branches, but do not open, merge or push PRs on Saturday/Sunday unless Moritz asks.
+- **Rust API naming:** accessors have no `get_` prefix (`rects_for_range()`, not `get_rects_for_range()`); boolean properties read `is_*`/`has_*`. Applies to the crate-root Rust API; the Neon binding functions in `src/node/` keep their JS-shaped names.
+- **Build locally** before pushing; CI is for the OS matrix, not the only compiler.
+- **One `target/` directory:** a cold Skia build is 10-25 min and about 50 GB. Switch branches in place (`git switch`) instead of `git worktree add`; if a second worktree is unavoidable, point `CARGO_TARGET_DIR` at the main checkout's `target/`. Never run two cargo builds on it at once.
+- **`Cargo.lock` is not tracked** (library crate). Leave it on disk, never re-add it.
+- **`.gitignore` is a denylist:** `/*.*` ignores every root file with an extension except an allowlist. A new root config file (`clippy.toml`, `rust-toolchain.toml`, ...) is silently dropped unless you add `!/<file>`.
+- **rustfmt is pinned to `nightly-2026-05-25`** in CI (`rustfmt.toml` uses nightly-only options). Format with `cargo +nightly-2026-05-25 fmt`; a newer nightly can drift. The old machine formatted with a newer nightly and CI still passed on `dbbd35a8`, but check. A newer clippy also flagged four lints CI's does not (fixed on `main`).
+- **CI clippy matrix** covers only features that gate Rust code: features off, `vulkan,window,node-addon` (Ubuntu), `metal,window,node-addon` (macOS). `freetype` gates no Rust.
+- **Skia bump checklist:** regenerate `containers/use-static-fontconfig.patch` against the new rust-skia tag (see Pending step 4).
+- **npm release flow:** prebuilds upload to a draft GitHub release `v<version>`; un-draft it (`gh release edit v<version> --draft=false`) before `npm publish` so the download URLs resolve, then `npm run snapshot` writes the asset sha256 digests into `package.json`. The npm package and the `skia-canvas` crate version independently (`rust-v<X.Y.Z>` tags for the crate).
