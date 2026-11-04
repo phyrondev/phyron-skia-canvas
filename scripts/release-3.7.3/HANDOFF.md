@@ -19,7 +19,8 @@ Moving to another machine. Nothing below the "Pending" line has been compiled.
 - `skia_safe::graphics::init()` always on at module load (option A, no opt-out variable). It is on `wip/3.7.3-skia-init`.
 - Raster cache: default back to Skia's 32 MB; `SKIA_CANVAS_CACHE_MB` stays as an opt-in library option, Studio will not set it. 440 MB is too much of a pod's 18 GiB headroom for 5%; speed comes from the motion-blur fast path, smaller surfaces (PP-1633) and `graphics::init()`.
 - Skia rebase: do it; it goes into 3.7.3 only if pixels are byte-identical to 3.7.2. Otherwise report which cases differ, how many pixels and the max per-channel difference, and Moritz decides.
-- Open: Studio recommended keeping 3.7.3 byte-identical and moving `a150b9cb` (and the Skia rebase) to 3.8.0. Moritz has not answered that explicitly; `graphics::init()` already moves pixels, so ask him once the numbers below are in.
+- 3.7.3 is not byte-identical to 3.7.2, by decision: `a150b9cb` ("high" smoothing follows Chrome: trilinear on minification, Mitchell on upscale) and `graphics::init()` both ship. Studio draws with "high"; the new minification costs the same as "low" (full-HD F16 at 0.37x: 5.5 ms, 3.7.2's Mitchell was about 50% over "low") and stops aliasing. Antialiasing and shape differences are expected anyway (Studio's Rust pipeline on parley differs there too).
+- Skia m157 goes to 3.8.0, not 3.7.3: its brotli `BUILD.gn` bug blocks the link (see step 4 on `skia-m157`). No CI patch for now; upstream may be fixed by the time it matters.
 
 ## Verified (on `dbbd35a8`, dev build unless noted)
 
