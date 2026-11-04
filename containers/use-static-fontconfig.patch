@@ -1,6 +1,8 @@
+diff --git a/skia-bindings/build_support/binaries_config.rs b/skia-bindings/build_support/binaries_config.rs
+index e6b7f1b..a08bd86 100644
 --- a/skia-bindings/build_support/binaries_config.rs
 +++ b/skia-bindings/build_support/binaries_config.rs
-@@ -150,6 +150,10 @@
+@@ -133,6 +133,10 @@ impl BinariesConfiguration {
  
          // On Linux, the order is significant, first the static libraries we built, and then
          // the system libraries.
@@ -11,14 +13,20 @@
          cargo::add_static_link_libs(&target, self.built_libraries(true));
          cargo::add_link_libs(&self.link_libraries);
      }
+diff --git a/skia-bindings/build_support/platform/linux.rs b/skia-bindings/build_support/platform/linux.rs
+index 119d3a4..5c50b43 100644
 --- a/skia-bindings/build_support/platform/linux.rs
 +++ b/skia-bindings/build_support/platform/linux.rs
-@@ -37,9 +37,8 @@
+@@ -37,13 +37,8 @@ impl PlatformDetails for Linux {
  pub fn link_libraries(features: &Features) -> Vec<String> {
      let mut libs = vec!["stdc++".to_string()];
  
 -    // Use pkg-config for system libraries when available
--    add_pkg_config_libs(&mut libs, "freetype2", &["freetype"]);
+-    // When `embed-freetype` is enabled, Skia builds its own FreeType
+-    // (`skia_use_system_freetype2 = no()`), so the system library must not be linked.
+-    if !features[feature::EMBED_FREETYPE] {
+-        add_pkg_config_libs(&mut libs, "freetype2", &["freetype"]);
+-    }
 -    add_pkg_config_libs(&mut libs, "fontconfig", &["fontconfig"]);
 +    // don't add freetype & fontconfig to the list of shared libraries to be linked
 +    // since we'll be adding static versions in binaries_config.rs
