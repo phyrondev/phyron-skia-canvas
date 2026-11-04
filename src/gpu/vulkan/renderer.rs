@@ -330,7 +330,7 @@ impl VulkanBackend {
             };
 
             direct_contexts::make_vulkan(
-                &vk::BackendContext::new(
+                &vk::BackendContext::new_builder(
                     instance.handle().as_raw() as _,
                     device.physical_device().handle().as_raw() as _,
                     device.handle().as_raw() as _,
@@ -339,7 +339,9 @@ impl VulkanBackend {
                         queue.queue_family_index() as usize,
                     ),
                     &get_proc,
-                ),
+                    None,
+                )
+                .build(),
                 None,
             )
             // SAFETY: Vulkan must be available since status check passed.
@@ -518,7 +520,8 @@ impl VulkanBackend {
         acquire_future: SwapchainAcquireFuture,
     ) {
         // flush the canvas's contents to the framebuffer
-        self.skia_ctx.flush_and_submit();
+        // a failed flush was silent before skia-safe 0.157 too
+        let _ = self.skia_ctx.flush_and_submit();
         self.skia_ctx.free_gpu_resources();
 
         // reclaim leftover resources from the last frame

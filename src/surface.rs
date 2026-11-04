@@ -104,7 +104,8 @@ impl Surface {
         if self.engine == EngineKind::Gpu {
             crate::gpu::RenderingEngine::GPU.with_direct_context(|ctx| {
                 if let Some(ctx) = ctx {
-                    ctx.flush_and_submit();
+                    // a failed flush was silent before skia-safe 0.157 too
+                    let _ = ctx.flush_and_submit();
                 }
             });
         }

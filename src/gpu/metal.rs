@@ -448,7 +448,8 @@ impl MetalBackend {
         // pass the suface's canvas to the user-provided callback
         f(surface.canvas());
 
-        self.skia_ctx.flush_and_submit();
+        // a failed flush was silent before skia-safe 0.157 too
+        let _ = self.skia_ctx.flush_and_submit();
         self.skia_ctx.free_gpu_resources();
 
         window.pre_present_notify();
