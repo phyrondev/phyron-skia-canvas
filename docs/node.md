@@ -199,9 +199,9 @@ This project uses [just](https://github.com/casey/just) as its command runner. R
 | `just release`       | Bump patch version, commit, tag, push, create draft release |
 | `just release minor` | Same as above but bump minor version                        |
 | `just release major` | Same as above but bump major version                        |
-| `just publish`       | Undraft the GitHub release and trigger npm publish          |
+| `just publish`       | Snapshot prebuild hashes, undraft the release, npm publish  |
 
-The release workflow bumps the version in both `package.json` and `Cargo.toml`, creates a git tag, pushes, and creates a draft GitHub release. After CI finishes building platform binaries, run `just publish` to make the release public and publish to npm.
+`just release` bumps the npm version in `package.json` (the `skia-canvas` crate in `Cargo.toml` versions separately, with `rust-v<X.Y.Z>` tags), commits, tags, pushes, creates a draft GitHub release and starts `build.yml`, which uploads the prebuilt binaries to that release. When every `build.yml` job has passed, run `just publish` from your own shell: it writes the prebuilds' sha256 hashes into `package.json`, commits and pushes them, makes the release public and runs `npm publish`, which asks for your passkey in the browser.
 
 ## Global Settings
 
