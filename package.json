@@ -67,14 +67,14 @@
     "rust"
   ],
   "prebuild": {
-    "aws-lambda-arm64.zip": "sha256:f176f14ebe07fc44cedd75cbd102d68eb0afb7d2db9ada5db3edd24824e1ec0e",
-    "aws-lambda-x64.zip": "sha256:98b91530e1253cfcae41454fc4ac5b82a553e64d9665b6f4aa67d81f299b90ed",
-    "darwin-arm64.gz": "sha256:460032dd67acb4017d7bd9b7fd9783ac94c94b922e6ac45b97654bf41b1cf42f",
-    "linux-arm64-glibc.gz": "sha256:e701251d6d6047b654648c4ae7364fa33ad7e6674963895b3ccad7728757b72a",
-    "linux-arm64-musl.gz": "sha256:ad030d0a78c022de1c393cfc64dfd70324ef6a6ac4782ef4e6a0bcd0b4d92f79",
-    "linux-x64-glibc.gz": "sha256:46dba2ccea28b112a3a8b7894f462dfe6e6d86ce88e130623e2f9409882f9e70",
-    "linux-x64-musl.gz": "sha256:10acd96ee996d150b77c549fd5944e668ba132400e50c034297ac2ec22f72784",
-    "win32-arm64.gz": "sha256:07285aa765248fc54b635fcd3516b79fa1d3f8887a8d4dbe47364fa33433464a",
-    "win32-x64.gz": "sha256:b1af509f298c7aabc961363192ae9ee9da425d0e82e82cad04ee1fa401b82fdc"
+    "aws-lambda-arm64.zip": "sha256:efaa3b36e25ad49c908b611deaaa9d39e610fba14b2b9bdee7d1c91b6180f178",
+    "aws-lambda-x64.zip": "sha256:49c19af34ea7ce8c0f263d41b062eeb7a91f5e6b480c54fe1b7528b6e08a655c",
+    "darwin-arm64.gz": "sha256:b048175a80bf7025af110356ff88b6c21a3faf0ab19f49497bae706f167acf7f",
+    "linux-arm64-glibc.gz": "sha256:92bf8b9396c5e36431e83d6bf5352880dbb0957e09f264162be727833575dfd7",
+    "linux-arm64-musl.gz": "sha256:57de49c4b84b7f02f2381bafc9ae6118b1b013e432a0f4b8058877213c0af902",
+    "linux-x64-glibc.gz": "sha256:8872c56b485ebe62471bb3576055720eb8c3693825e0034c3195ccae41ea70b7",
+    "linux-x64-musl.gz": "sha256:330be51a9f905d8067b0c414a27267d9d3fd3aabe2bb1fc228a45b9a900165a2",
+    "win32-arm64.gz": "sha256:1777fe822db41346c565234329bf2a53a3ea7b2fe7db3c69040e24de3f7ffeb0",
+    "win32-x64.gz": "sha256:31ad5245bcb781d6e398bfc36774335a669a681618085ef5106f8eeadb94db31"
   }
 }
