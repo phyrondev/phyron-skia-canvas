@@ -4,12 +4,12 @@ Moving to another machine. Nothing below the "Pending" line has been compiled.
 
 ## Where things are
 
-| Ref | State |
-| --- | --- |
-| `main` = `dbbd35a8` (pushed) | 3.7.3 code, Rust CI green. Not tagged, not on npm. |
-| `a150b9cb` (on `main`) | Pending regression fixes #32, #33, #34, #35, #36, #38. Moves pixels. |
-| `wip/3.7.3-skia-init` (pushed) | On top of `main`. **Uncompiled.** `graphics::init()`, rounding tests, raster `drawImage` sources reported to V8, docs, changelog, these scripts. |
-| `skia-m157` (pushed) | On top of `wip/3.7.3-skia-init`. **Uncompiled.** `skia-safe` 0.97.2 -> 0.157.0 (Skia m148 -> m157), `ganesh` feature added to `vulkan` and `metal`. Nothing else ported yet. |
+| Ref                            | State                                                                                                                                                                        |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `main` = `dbbd35a8` (pushed)   | 3.7.3 code, Rust CI green. Not tagged, not on npm.                                                                                                                           |
+| `a150b9cb` (on `main`)         | Pending regression fixes #32, #33, #34, #35, #36, #38. Moves pixels.                                                                                                         |
+| `wip/3.7.3-skia-init` (pushed) | On top of `main`. Dev-built and tested (step 1). `graphics::init()`, rounding tests, raster `drawImage` sources reported to V8, docs, changelog, these scripts.              |
+| `skia-m157` (pushed)           | On top of `wip/3.7.3-skia-init`. **Uncompiled.** `skia-safe` 0.97.2 -> 0.157.0 (Skia m148 -> m157), `ganesh` feature added to `vulkan` and `metal`. Nothing else ported yet. |
 
 `dbbd35a8` holds `Canvas.toImage()`, `Canvas.release()`, `Image.release()`, V8 external-memory reporting (`napi_adjust_external_memory`, read back with `externalMemory()`), the `new Canvas(w, h, { gpu: false })` fix, and Skia's raster cache at 256 MB (`SKIA_CANVAS_CACHE_MB`).
 
@@ -32,15 +32,15 @@ Moving to another machine. Nothing below the "Pending" line has been compiled.
 
 Studio's loop, `studioLoopRepro.mjs <lib> 30 64` (30 blurred items x 64 motion-blur samples):
 
-| Build | Loop | Time | Peak RSS |
-| --- | --- | --- | --- |
-| 3.6.0 npm | 8-bit | 63 s | 435 MB |
-| 3.7.0 npm | F16 linear | 224 s | 25.7 GB (the OOM) |
-| 3.7.2 npm | F16 linear | 281 s | 479 MB |
-| 3.7.2 npm | 8-bit | 87 s | 443 MB |
-| 3.7.3 | F16 linear | 167 s | 937 MB |
-| 3.7.3 | 8-bit | 71 s | 890 MB |
-| 3.7.3 | F16, `toImage` per sample only | 175 s | 14.5 GB (see below) |
+| Build     | Loop                           | Time  | Peak RSS            |
+| --------- | ------------------------------ | ----- | ------------------- |
+| 3.6.0 npm | 8-bit                          | 63 s  | 435 MB              |
+| 3.7.0 npm | F16 linear                     | 224 s | 25.7 GB (the OOM)   |
+| 3.7.2 npm | F16 linear                     | 281 s | 479 MB              |
+| 3.7.2 npm | 8-bit                          | 87 s  | 443 MB              |
+| 3.7.3     | F16 linear                     | 167 s | 937 MB              |
+| 3.7.3     | 8-bit                          | 71 s  | 890 MB              |
+| 3.7.3     | F16, `toImage` per sample only | 175 s | 14.5 GB (see below) |
 
 The `toImage` variant pinned 30 x 64 x 7.7 MB because each accumulator's recording kept its sample rasters and the accumulators were drawn lazily onward. `studioLoopToImage.mjs` now also cuts at the accumulator; rerun it. Docs (`docs/api/canvas.md`, `toImage()`) explain the pattern.
 
@@ -50,11 +50,12 @@ Not yet run: the 32 MB-cache variant (separates the cache's share of the speedup
 
 - Rounding (Studio asked; answered to studio-9b): no float -> 8-bit path truncates (raster pipeline `to_unorm`, skcms `to_fixed`, `Sk4f_toL32`, `SkConvertPixels`; PNG writes floats as 16-bit). x86 SIMD rounds ties to even, scalar half up. Skia's sRGB encode uses `approx_powf` (about 0.02 code of error), so the tests keep 0.1 code from boundaries.
 - F16 stores truncated and flushed denormals because the module never called `SkGraphics::Init()`: Skia ran its SSE2 baseline on every host, whose `to_half` drops 13 mantissa bits. m157's baseline `to_half` is unchanged, so the rebase does not fix it; `graphics::init()` does (AVX2 F16C path).
+- Array `fillStyle`/`strokeStyle` colors are not exact on float canvases, on 3.7.2 as well as 3.7.3: `SkPaint::setColor(SkColor4f, SkColorSpace*)` converts the color to sRGB for storage and the draw converts it back, both through skcms's approximate `powf`. A linear fill on an `RGBAF32` `srgb-linear` canvas lands up to 4.6e-4 relative off (0.92 of a half-float step); `putImageData` of the same floats is exact. Below a tenth of an 8-bit code and under one half-float step. A color shader does not avoid it (`SkShaders::Color(SkColor4f, space)` also stores sRGB, `SkColorShader.cpp`). The loss is skcms's `powf_` in `skcms_TransferFunction_eval`; options are a 1x1 float image shader per solid color (loses the constant-color and memset fast paths) or patching skcms in a vendored Skia. Not worth it so far; float `ImageData` is exact for anyone who needs exact values. The rounding test feeds F16 through float `ImageData` because of this.
 - `SKIA_CANVAS_THREADS` already bounds the async export pool (Studio's production OOM suspect is pool size vs core count); Studio now sets it.
 
 ## Pending, in order
 
-1. **Build `wip/3.7.3-skia-init`** (dev): `npm run build -- dev`, `just lint-check`, `node --test`. Expect `tests/suite/rounding.test.js` to pass now (it fails 3/11 without init). Fix what breaks, mark contract row W20 `Covered`.
+1. ~~**Build `wip/3.7.3-skia-init`** (dev)~~ Done on the new machine (Ryzen 7 6800H, AVX2, Node 22.21.1): dev build, `node --test` 220 pass, 4 skipped, rustfmt clean on `nightly-2026-05-25`. `rounding.test.js` 11/11 after switching its F16 inputs from fills to float `ImageData` (see the `SkPaint` finding); the 3.7.2 prebuild still fails its 3 F16 tests. W20 `Covered`.
 2. **Release build** (`npm run build`, about 20 min with fat LTO) and `scripts/release-3.7.3/bench.sh lib <3.7.2 lib> <3.6.0 lib>` (get 3.7.2 and 3.6.0 with `npm install phyron-skia-canvas@3.7.2` into scratch dirs). Report for Moritz: speed with vs without init (rerun on `dbbd35a8` for the without numbers if the host changed), `deltas.js` vs 3.7.2 and vs `dbbd35a8` (init's own effect), the 188 probe, F16 store probe. Fill the TODO numbers in `CHANGELOG.md`.
 3. **AVX2 vs AVX-512**: Studio's golden suite tolerates 1/255 across machines; parity baselines are byte-exact and will be regenerated. Bound the ML3 (AVX2) vs ML4 (AVX-512) difference: run `deltas.js` with outputs saved on an AVX-512 host (many GitHub runners are) against an AVX2 host, or report that it could not be measured.
 4. **Skia rebase on `skia-m157`** (already on top of `wip/3.7.3-skia-init`; rebase again if that branch moves): compile and port. Breaking changes per rust-skia notes: Vulkan context builder (0.99; `src/gpu/vulkan/{engine,renderer}.rs` use `vk::BackendContext::new` + `direct_contexts::make_vulkan`), Ganesh/Graphite feature split (0.153, done in `Cargo.toml`), third-party libs incl. freetype/harfbuzz updated (0.156; text pixels will likely move), FFI aliasing fixes (0.157: PDF `Document` borrows its writer -- `pdf::new_document` in `src/context/page.rs`; `TypefaceFontProvider`, `RefHandle::native_mut()` gone). **Regenerate `containers/use-static-fontconfig.patch`** against the rust-skia 0.157.0 tag or the Linux node prebuild breaks with a misleading error (`.github/workflows/build.yml` applies it with `-p1` to the vendored rust-skia checkout; verify `patch -p1 --dry-run` exits 0 with no fuzz). Then `deltas.js` vs 3.7.2 and the full suite; report to Moritz.

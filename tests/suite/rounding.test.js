@@ -47,13 +47,37 @@ describe("RGBAF16 canvases round to the nearest half float", () => {
     return Math.floor(base / step) * step + 0.75 * step;
   });
 
+  // The inputs go in through float `ImageData`, not `fillStyle`: `SkPaint`
+  // keeps its color in sRGB, and the encode and decode around that (skcms's
+  // approximate `powf`) move a linear fill by up to about 5e-4 relative, close
+  // to a whole half-float step, before anything is stored.
+  const exact = () => {
+      let ctx = cpu(values.length, 1, LINEAR_F32).getContext("2d"),
+        data = ctx.getImageData(0, 0, values.length, 1, LINEAR_F32),
+        pixels = floats(data.data);
+      values.forEach((v, i) => pixels.set([v, v, v, 1], i * 4));
+      // `floats` copies; write the values back into the `ImageData`
+      data.data.set(new Uint8Array(pixels.buffer));
+      return data;
+    },
+    f16 = () => cpu(values.length, 1, LINEAR_F16);
+
   for (const [label, store] of [
-    ["fill", () => greys(values, LINEAR_F16)],
+    [
+      "putImageData of float data",
+      () => {
+        let dst = f16();
+        dst.getContext("2d").putImageData(exact(), 0, 0);
+        return dst;
+      },
+    ],
     [
       "drawImage of an F32 canvas",
       () => {
-        let dst = cpu(values.length, 1, LINEAR_F16);
-        dst.getContext("2d").drawImage(greys(values, LINEAR_F32), 0, 0);
+        let src = cpu(values.length, 1, LINEAR_F32),
+          dst = f16();
+        src.getContext("2d").putImageData(exact(), 0, 0);
+        dst.getContext("2d").drawImage(src, 0, 0);
         return dst;
       },
     ],
@@ -77,10 +101,7 @@ describe("RGBAF16 canvases round to the nearest half float", () => {
     tiny.forEach((v, i) => {
       let got = stored[i * 4];
       // denormal halfs are spaced 2^-24 apart
-      assert.ok(
-        Math.abs(got - v) <= Math.pow(2, -25),
-        `${v} stored as ${got}`,
-      );
+      assert.ok(Math.abs(got - v) <= Math.pow(2, -25), `${v} stored as ${got}`);
     });
   });
 });
