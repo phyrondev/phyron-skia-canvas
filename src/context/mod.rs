@@ -66,8 +66,9 @@ pub struct Context2D {
     path: PathBuilder,
     /// Native bytes reported to V8 for this context (`node::memory`).
     memory: ExternalMemory,
-    /// Bytes of eager raster copies `drawImage` recorded from other canvases
-    /// (`RGBAF32` sources, or either canvas on the GPU). They live in the
+    /// Bytes of raster sources `drawImage` recorded: eager canvas copies
+    /// (`RGBAF32` sources, or either canvas on the GPU), `ImageData` and
+    /// raster `Image`s such as `toImage()` snapshots. They live in the
     /// recording until it is reset, so they are this context's to report.
     pinned_bytes: i64,
 }

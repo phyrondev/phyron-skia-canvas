@@ -217,6 +217,14 @@ For example, you can limit your asynchronous processing to two simultaneous task
 SKIA_CANVAS_THREADS=2 node my-canvas-script.js
 ```
 
+### Raster Cache
+
+Skia keeps the pixels of lazily drawn images (a CPU canvas passed to `drawImage()`, decoded image files) in a raster cache between draws, so drawing the same source again does not rasterize it again. The cache is capped at Skia's default of 32 MB. A scene that redraws many large source canvases can run faster with a higher cap, at the cost of peak memory; set the cap in megabytes with the `SKIA_CANVAS_CACHE_MB` environment variable:
+
+```bash
+SKIA_CANVAS_CACHE_MB=256 node my-canvas-script.js
+```
+
 ### Argument Validation
 
 There are a number of situations where the browser API will react to invalid arguments by silently ignoring the method call rather than throwing an error. For example, these lines will simply have no effect:

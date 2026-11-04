@@ -30,12 +30,33 @@
   runs when native memory grows, which it never saw before.
 - **`SKIA_CANVAS_CACHE_MB`** sets Skia's raster cache limit (the pixels of
   lazy `drawImage(canvas)` sources and decoded files between draws). The
-  default rises from Skia's 32 MB to 256 MB, a cap, not a reservation, so a
-  scene that draws the same source canvases more than once does not rasterize
-  them again.
+  default stays at Skia's 32 MB. A larger cap, a limit and not a
+  reservation, saves rasterizing the same source canvases again but raises
+  peak memory: on Studio's motion-blur loop (30 items x 64 half-float
+  samples, release build, CPU, Ryzen 7 6800H) 256 MB took 42 s against 40
+  to 45 s at 32 MB, no gain beyond run-to-run noise, and raised peak memory
+  from about 470 MB to 860-910 MB.
+- **Raster `drawImage` sources count against the destination.** Drawing a
+  `toImage()` snapshot, raw-pixel image or `ImageData` reports its pixels for
+  the destination's recording, which keeps them until reset, even after the
+  source image is released.
 
 ### Fixes
 
+- **Skia's CPU code paths are selected for the host.** The module never
+  called `SkGraphics::Init()`, so Skia rendered on its SSE2 baseline on every
+  x86 host. That code truncates when it converts to half float and flushes
+  half denormals to zero, so `RGBAF16` canvases lost up to one half-float
+  step per store, biasing 8-bit sRGB output down by up to about 0.05 code
+  values. The module now initializes Skia at load: half-float stores round
+  to nearest and keep denormals, and CPU rendering uses SSE4.1, AVX2 or
+  AVX-512 as the host allows. On Studio's motion-blur loop (30 items x 64
+  half-float samples, release build, CPU, Ryzen 7 6800H) 3.7.3 takes 40 to
+  45 s where 3.7.2 took 92 s, at the same peak memory; with a 256 MB raster cache
+  it takes 42 s with the initialization and 103 to 119 s without.
+  **Pixels change** (in 8-bit output of half-float canvases by at most one
+  code value on opaque pixels and two on translucent ones), and output can
+  now differ by that much between hosts with different instruction sets.
 - **`new Canvas(w, h, { gpu: false })` selects the CPU engine.** It used to
   set only the status flag: the canvas still rendered on the GPU, `.gpu` read
   `true`, and `drawImage(canvas)` took the eager path. Only the setter

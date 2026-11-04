@@ -24,8 +24,9 @@ const cpu = (w, h, opts) => {
   external = () => externalMemory(),
   rss = () => process.memoryUsage().rss,
   pixels = (canvas, opts) =>
-    canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height, opts)
-      .data,
+    canvas
+      .getContext("2d")
+      .getImageData(0, 0, canvas.width, canvas.height, opts).data,
   paint = (ctx, offset = 0) => {
     ctx.fillStyle = "#20a0e0";
     ctx.fillRect(10 + offset, 10, 60, 40);
@@ -49,7 +50,10 @@ describe("Canvas.toImage()", () => {
   for (let [label, opts] of [
     ["8-bit sRGB", { colorType: "rgba", colorSpace: "srgb" }],
     ["F16 linear", LINEAR],
-    ["F32 P3 linear", { colorType: "RGBAF32", colorSpace: "display-p3-linear" }],
+    [
+      "F32 P3 linear",
+      { colorType: "RGBAF32", colorSpace: "display-p3-linear" },
+    ],
   ]) {
     test(`draws the same pixels as drawImage(canvas) on the CPU (${label})`, () => {
       let source = cpu(80, 60, opts);
@@ -114,9 +118,18 @@ describe("Canvas.release()", () => {
     assert.throws(() => ctx.getImageData(0, 0, 1, 1), /released/);
     assert.throws(() => canvas.toBufferSync("png"), /released/);
     assert.throws(() => canvas.toImage(), /released/);
-    assert.throws(() => cpu(10, 10).getContext("2d").drawImage(canvas, 0, 0), /released/);
-    assert.throws(() => cpu(10, 10).getContext("2d").drawCanvas(canvas, 0, 0), /released/);
-    assert.throws(() => cpu(10, 10).getContext("2d").createPattern(canvas, "repeat"), /released/);
+    assert.throws(
+      () => cpu(10, 10).getContext("2d").drawImage(canvas, 0, 0),
+      /released/,
+    );
+    assert.throws(
+      () => cpu(10, 10).getContext("2d").drawCanvas(canvas, 0, 0),
+      /released/,
+    );
+    assert.throws(
+      () => cpu(10, 10).getContext("2d").createPattern(canvas, "repeat"),
+      /released/,
+    );
     assert.throws(() => canvas.newPage(), /released/);
     assert.throws(() => (canvas.width = 20), /released/);
     assert.equal(canvas.width, 40);
@@ -136,7 +149,10 @@ describe("Canvas.release()", () => {
     let image = source.toImage();
     image.release();
     assert.equal(image.released, true);
-    assert.throws(() => cpu(10, 10).getContext("2d").drawImage(image, 0, 0), /released/);
+    assert.throws(
+      () => cpu(10, 10).getContext("2d").drawImage(image, 0, 0),
+      /released/,
+    );
     image.release(); // idempotent
   });
 
@@ -155,11 +171,16 @@ describe("Canvas.release()", () => {
 
     canvas.release();
     let after = external() - before - raw.length;
-    assert(after < 1024 * 1024, `expected the report back near zero, got ${after}`);
+    assert(
+      after < 1024 * 1024,
+      `expected the report back near zero, got ${after}`,
+    );
   });
 
   test("a per-sample release loop stays flat", async () => {
-    const W = 1024, H = 512, N = 40;
+    const W = 1024,
+      H = 512,
+      N = 40;
     let accum = cpu(W, H, LINEAR),
       actx = accum.getContext("2d"),
       temp = cpu(W, H, LINEAR);
@@ -190,9 +211,14 @@ describe("Canvas.release()", () => {
     let grownExternal = external() - startExternal,
       grown = rss() - start;
     // N x 4 MB (160 MB) if the images or surfaces leaked
-    assert(grownExternal < 24 * 1024 * 1024, `external grew by ${grownExternal}`);
+    assert(
+      grownExternal < 24 * 1024 * 1024,
+      `external grew by ${grownExternal}`,
+    );
     // N x 4 MB would be 160 MB if anything leaked; allow allocator slack
-    assert(grown < 64 * 1024 * 1024, `rss grew by ${grown}`);
+    // (macOS keeps freed pages: 67 MB on the Node 24 runner with the external
+    // report flat)
+    assert(grown < 96 * 1024 * 1024, `rss grew by ${grown}`);
   });
 });
 
@@ -211,7 +237,10 @@ describe("External memory report", () => {
       gc();
       await new Promise((res) => setTimeout(res, 20));
     }
-    assert(external() - before < 1024 * 1024, `still reported: ${external() - before}`);
+    assert(
+      external() - before < 1024 * 1024,
+      `still reported: ${external() - before}`,
+    );
   });
 
   test("toImage images report their pixels and release them", () => {
@@ -224,7 +253,10 @@ describe("External memory report", () => {
   });
 
   test("an eager drawImage copy (RGBAF32 source) is reported and reset frees it", () => {
-    let source = cpu(512, 512, { colorType: "RGBAF32", colorSpace: "srgb-linear" });
+    let source = cpu(512, 512, {
+      colorType: "RGBAF32",
+      colorSpace: "srgb-linear",
+    });
     source.getContext("2d").fillRect(0, 0, 10, 10);
     let dst = cpu(512, 512);
     gc();
@@ -253,14 +285,20 @@ describe("External memory report", () => {
       // canvases and images alive at thread exit: the env teardown finalizes them
       parentPort.postMessage(keep.length);
     `;
-    let workers = Array.from({ length: 6 }, () => new Worker(script, { eval: true }));
+    let workers = Array.from(
+      { length: 6 },
+      () => new Worker(script, { eval: true }),
+    );
     let counts = await Promise.all(
       workers.map(
         (w) =>
           new Promise((res, rej) => {
             w.once("message", res);
             w.once("error", rej);
-            w.once("exit", (code) => code && rej(new Error(`worker exit ${code}`)));
+            w.once(
+              "exit",
+              (code) => code && rej(new Error(`worker exit ${code}`)),
+            );
           }),
       ),
     );
@@ -311,6 +349,9 @@ describe("Linear blending survives", () => {
     // and through toImage()
     let out2 = cpu(4, 4);
     out2.getContext("2d").drawImage(b.toImage(), 0, 0);
-    assert.deepEqual(Array.from(pixels(out2).slice(0, 4)), [188, 188, 188, 255]);
+    assert.deepEqual(
+      Array.from(pixels(out2).slice(0, 4)),
+      [188, 188, 188, 255],
+    );
   });
 });

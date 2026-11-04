@@ -192,6 +192,33 @@ image.release(); // once the accumulator has been rasterized or you are done
 The pixels equal what `drawImage(canvas)` draws on the CPU. Later drawing on
 the canvas does not change the image.
 
+The image's pixels are a full raster, and the destination's recording keeps
+them until the destination is reset, even after `image.release()`: release
+drops the image object's reference, not the recording's. So a snapshot per
+sample only bounds memory if the destination is cut too. Snapshot the
+accumulator once its samples are in, release it, and draw that image onward:
+
+```js
+for (const item of items) {
+  let accumulator = new Canvas(w, h, opts);
+  for (let i = 0; i < samples; i++) {
+    let sample = renderSample(item, i); // a Canvas
+    let image = sample.toImage();
+    sample.release();
+    accumulator.getContext("2d").drawImage(image, 0, 0);
+    image.release();
+  }
+  let result = accumulator.toImage(); // rasterizes the samples once
+  accumulator.release(); // frees the recording and the sample rasters in it
+  frame.getContext("2d").drawImage(result, 0, 0);
+}
+```
+
+Without the second cut, 30 items of 64 half-float samples at 1858x518 keep
+`30 x 64 x 7.7 MB = 14.8 GB` alive until the frame is rasterized. The
+memory is reported to V8 either way (see [`externalMemory()`](#native-memory)),
+but it is not collectable while the frame still references it.
+
 ### `release()`
 
 ```js

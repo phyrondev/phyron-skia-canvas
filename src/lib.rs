@@ -147,7 +147,14 @@ fn backend(mut cx: FunctionContext) -> JsResult<JsString> {
 #[cfg(feature = "node-addon")]
 #[neon::main]
 fn main(mut cx: ModuleContext) -> NeonResult<()> {
-    use skia_safe::graphics::set_resource_cache_total_bytes_limit;
+    use skia_safe::graphics::{self, set_resource_cache_total_bytes_limit};
+
+    // Select Skia's CPU code paths for this host (SSE4.1, AVX2 or AVX-512)
+    // before anything renders. Without it Skia stays on its SSE2 baseline:
+    // slower, and its float-to-half conversion truncates and flushes
+    // denormals, so `RGBAF16` canvases lost up to one half-float step per
+    // store. Idempotent and thread-safe.
+    graphics::init();
 
     // initialize thread pool w/ non-default size if requested
     if let Ok(value) = std::env::var("SKIA_CANVAS_THREADS")
@@ -160,15 +167,15 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     }
 
     // Skia's raster cache holds the pixels of lazy images (`drawImage` of a
-    // CPU canvas, decoded files) between draws. Its 32 MB default evicts a
-    // few full-frame sources, so a scene that draws the same source canvases
-    // more than once rasterizes them again. 256 MB is a cap, not a
-    // reservation; `SKIA_CANVAS_CACHE_MB` overrides it.
-    let cache_mb = std::env::var("SKIA_CANVAS_CACHE_MB")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(256);
-    set_resource_cache_total_bytes_limit(cache_mb.saturating_mul(1024 * 1024));
+    // CPU canvas, decoded files) between draws. Skia's 32 MB default stays
+    // unless `SKIA_CANVAS_CACHE_MB` asks for more: a larger cap saves
+    // rasterizing the same source canvases again, but raises peak memory
+    // (Studio's motion-blur loop at 256 MB: 5% faster, about 440 MB more).
+    if let Ok(value) = std::env::var("SKIA_CANVAS_CACHE_MB")
+        && let Ok(mb) = value.parse::<usize>()
+    {
+        set_resource_cache_total_bytes_limit(mb.saturating_mul(1024 * 1024));
+    }
 
     // -- Image -------------------------------------------------------------------------------------
 
