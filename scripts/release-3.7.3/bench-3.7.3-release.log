@@ -1,0 +1,7 @@
+== 3.7.3 F16 loop
+{"masks":30,"samples":64,"rssBeforeMB":68,"peakAfterRecordMB":427,"peakAfterRasterMB":937,"bytes":8294400,"ms":167467}
+== 3.7.3 8-bit loop
+{"masks":30,"samples":64,"rssBeforeMB":68,"peakAfterRecordMB":426,"peakAfterRasterMB":890,"bytes":8294400,"ms":70567}
+== 3.7.3 F16 toImage+release
+{"masks":30,"samples":64,"rssBeforeMB":68,"peakAfterRecordMB":14513,"peakAfterRasterMB":14859,"bytes":8294400,"ms":174685}
+== 3.7.3 F16 loop, cache 32 MB

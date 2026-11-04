@@ -32,10 +32,29 @@
   lazy `drawImage(canvas)` sources and decoded files between draws). The
   default rises from Skia's 32 MB to 256 MB, a cap, not a reservation, so a
   scene that draws the same source canvases more than once does not rasterize
-  them again.
+  them again. Set `SKIA_CANVAS_CACHE_MB=32` for the old limit. On Studio's
+  motion-blur loop (30 items x 64 half-float samples, release build, CPU)
+  3.7.3 takes 167 s where 3.7.2 took 281 s, and peak memory rises from
+  479 MB to 937 MB. <!-- TODO before release: rerun with
+  SKIA_CANVAS_CACHE_MB=32 to separate the cache's share, and with
+  graphics::init(); update these numbers. -->
+- **Raster `drawImage` sources count against the destination.** Drawing a
+  `toImage()` snapshot, raw-pixel image or `ImageData` reports its pixels for
+  the destination's recording, which keeps them until reset, even after the
+  source image is released.
 
 ### Fixes
 
+- **Skia's CPU code paths are selected for the host.** The module never
+  called `SkGraphics::Init()`, so Skia rendered on its SSE2 baseline on every
+  x86 host. That code truncates when it converts to half float and flushes
+  half denormals to zero, so `RGBAF16` canvases lost up to one half-float
+  step per store, biasing 8-bit sRGB output down by up to about 0.05 code
+  values. The module now initializes Skia at load: half-float stores round
+  to nearest and keep denormals, and CPU rendering uses SSE4.1, AVX2 or
+  AVX-512 as the host allows. **Pixels change** (by at most one code value
+  in 8-bit output), and output can now differ by that much between hosts
+  with different instruction sets.
 - **`new Canvas(w, h, { gpu: false })` selects the CPU engine.** It used to
   set only the status flag: the canvas still rendered on the GPU, `.gpu` read
   `true`, and `drawImage(canvas)` took the eager path. Only the setter

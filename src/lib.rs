@@ -147,7 +147,14 @@ fn backend(mut cx: FunctionContext) -> JsResult<JsString> {
 #[cfg(feature = "node-addon")]
 #[neon::main]
 fn main(mut cx: ModuleContext) -> NeonResult<()> {
-    use skia_safe::graphics::set_resource_cache_total_bytes_limit;
+    use skia_safe::graphics::{self, set_resource_cache_total_bytes_limit};
+
+    // Select Skia's CPU code paths for this host (SSE4.1, AVX2 or AVX-512)
+    // before anything renders. Without it Skia stays on its SSE2 baseline:
+    // slower, and its float-to-half conversion truncates and flushes
+    // denormals, so `RGBAF16` canvases lost up to one half-float step per
+    // store. Idempotent and thread-safe.
+    graphics::init();
 
     // initialize thread pool w/ non-default size if requested
     if let Ok(value) = std::env::var("SKIA_CANVAS_THREADS")

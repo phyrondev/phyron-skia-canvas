@@ -933,9 +933,6 @@ pub fn drawImage(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     };
     let first_num = if cpu_only.is_some() { 3 } else { 2 };
     let argc = cx.len().saturating_sub(first_num - 2);
-    // a canvas source rasterized at the call is pinned by this recording
-    // until it is reset; report it to V8 (`Context2D::pin_bytes`)
-    let from_canvas = cpu_only.is_some();
     let arg_names = [
         "srcX",
         "srcY",
@@ -972,7 +969,14 @@ pub fn drawImage(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         content.snap_rects_to_bounds(src, dst);
         let mut this = this.borrow_mut();
         this.draw_image(img, &src, &dst);
-        if from_canvas && !img.is_lazy_generated() {
+        // A raster source (a canvas copied at the call, `ImageData`, a
+        // `toImage()` snapshot, raw pixels) stays referenced by this
+        // recording until it is reset, whatever happens to the source
+        // object, so it counts against this context (`Context2D::pin_bytes`).
+        // While the source `Image` is alive its pixels are reported twice;
+        // over-reporting only makes V8 collect sooner. Lazy sources (decoded
+        // files, CPU canvases) own no raster until drawn.
+        if !img.is_lazy_generated() {
             this.pin_bytes(img.image_info().compute_min_byte_size() as i64);
             this.sync_memory(&mut cx);
         }

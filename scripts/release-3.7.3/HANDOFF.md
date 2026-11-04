@@ -1,0 +1,70 @@
+# Handoff: phyron-skia-canvas 3.7.3 (2026-11-04)
+
+Moving to another machine. Nothing below the "Pending" line has been compiled.
+
+## Where things are
+
+| Ref | State |
+| --- | --- |
+| `main` = `dbbd35a8` (pushed) | 3.7.3 code, Rust CI green. Not tagged, not on npm. |
+| `a150b9cb` (on `main`) | Pending regression fixes #32, #33, #34, #35, #36, #38. Moves pixels. |
+| `wip/3.7.3-skia-init` (pushed) | On top of `main`. **Uncompiled.** `graphics::init()`, rounding tests, raster `drawImage` sources reported to V8, docs, changelog, these scripts. |
+| `skia-m157` (pushed) | On top of `dbbd35a8`. **Uncompiled.** `skia-safe` 0.97.2 -> 0.157.0 (Skia m148 -> m157), `ganesh` feature added to `vulkan` and `metal`. Nothing else ported yet. |
+
+`dbbd35a8` holds `Canvas.toImage()`, `Canvas.release()`, `Image.release()`, V8 external-memory reporting (`napi_adjust_external_memory`, read back with `externalMemory()`), the `new Canvas(w, h, { gpu: false })` fix, and Skia's raster cache at 256 MB (`SKIA_CANVAS_CACHE_MB`).
+
+## Decisions (Moritz)
+
+- Scope and order of 3.7.3 approved; tag and publish only with Moritz's go-ahead.
+- `skia_safe::graphics::init()` always on at module load (option A, no opt-out variable). It is on `wip/3.7.3-skia-init`.
+- Skia rebase: do it; it goes into 3.7.3 only if pixels are byte-identical to 3.7.2. Otherwise report which cases differ, how many pixels and the max per-channel difference, and Moritz decides.
+- Open: Studio recommended keeping 3.7.3 byte-identical and moving `a150b9cb` (and the Skia rebase) to 3.8.0. Moritz has not answered that explicitly; `graphics::init()` already moves pixels, so ask him once the numbers below are in.
+
+## Verified (on `dbbd35a8`, dev build unless noted)
+
+- 213 JS tests and 117 Rust tests pass; clippy and fmt clean; memory tests (incl. 6 worker threads with live objects at exit) pass on Node 22.23.4 and 24.22.2.
+- 25 scenes raw-export byte-identical to the 3.7.2 npm prebuild (`identity.js`).
+- `deltas.js` (adds text, gradient, blur, image smoothing): 3.7.3 vs 3.7.2 differs only through `imageSmoothingQuality = "high"` minification (Mitchell -> trilinear, from `a150b9cb`): max 13 codes premultiplied in 8-bit sRGB, 22 through the F16 path. Raw exports show 255 on nearly transparent pixels (unpremultiplied); compare premultiplied.
+- 188 linear-blend probe: 188 on 3.7.2 and 3.7.3.
+- Orphaned canvases (500 x 1024x1024 with a `getImageData` surface, one `await` each): peak 167 MB RSS vs 860 MB on 3.7.2.
+
+## Benchmarks so far (release build of `dbbd35a8`, this host: Xeon E-2276M, AVX2, no `graphics::init()`)
+
+Studio's loop, `studioLoopRepro.mjs <lib> 30 64` (30 blurred items x 64 motion-blur samples):
+
+| Build | Loop | Time | Peak RSS |
+| --- | --- | --- | --- |
+| 3.6.0 npm | 8-bit | 63 s | 435 MB |
+| 3.7.0 npm | F16 linear | 224 s | 25.7 GB (the OOM) |
+| 3.7.2 npm | F16 linear | 281 s | 479 MB |
+| 3.7.2 npm | 8-bit | 87 s | 443 MB |
+| 3.7.3 | F16 linear | 167 s | 937 MB |
+| 3.7.3 | 8-bit | 71 s | 890 MB |
+| 3.7.3 | F16, `toImage` per sample only | 175 s | 14.5 GB (see below) |
+
+The `toImage` variant pinned 30 x 64 x 7.7 MB because each accumulator's recording kept its sample rasters and the accumulators were drawn lazily onward. `studioLoopToImage.mjs` now also cuts at the accumulator; rerun it. Docs (`docs/api/canvas.md`, `toImage()`) explain the pattern.
+
+Not yet run: the 32 MB-cache variant (separates the cache's share of the speedup from its +450 MB peak).
+
+## Findings to report
+
+- Rounding (Studio asked; answered to studio-9b): no float -> 8-bit path truncates (raster pipeline `to_unorm`, skcms `to_fixed`, `Sk4f_toL32`, `SkConvertPixels`; PNG writes floats as 16-bit). x86 SIMD rounds ties to even, scalar half up. Skia's sRGB encode uses `approx_powf` (about 0.02 code of error), so the tests keep 0.1 code from boundaries.
+- F16 stores truncated and flushed denormals because the module never called `SkGraphics::Init()`: Skia ran its SSE2 baseline on every host, whose `to_half` drops 13 mantissa bits. m157's baseline `to_half` is unchanged, so the rebase does not fix it; `graphics::init()` does (AVX2 F16C path).
+- `SKIA_CANVAS_THREADS` already bounds the async export pool (Studio's production OOM suspect is pool size vs core count); Studio now sets it.
+
+## Pending, in order
+
+1. **Build `wip/3.7.3-skia-init`** (dev): `npm run build -- dev`, `just lint-check`, `node --test`. Expect `tests/suite/rounding.test.js` to pass now (it fails 3/11 without init). Fix what breaks, mark contract row W20 `Covered`.
+2. **Release build** (`npm run build`, about 20 min with fat LTO) and `scripts/release-3.7.3/bench.sh lib <3.7.2 lib> <3.6.0 lib>` (get 3.7.2 and 3.6.0 with `npm install phyron-skia-canvas@3.7.2` into scratch dirs). Report for Moritz: speed with vs without init (rerun on `dbbd35a8` for the without numbers if the host changed), `deltas.js` vs 3.7.2 and vs `dbbd35a8` (init's own effect), the 188 probe, F16 store probe. Fill the TODO numbers in `CHANGELOG.md`.
+3. **AVX2 vs AVX-512**: Studio's golden suite tolerates 1/255 across machines; parity baselines are byte-exact and will be regenerated. Bound the ML3 (AVX2) vs ML4 (AVX-512) difference: run `deltas.js` with outputs saved on an AVX-512 host (many GitHub runners are) against an AVX2 host, or report that it could not be measured.
+4. **Skia rebase on `skia-m157`** (rebase it onto `wip/3.7.3-skia-init` first): compile and port. Breaking changes per rust-skia notes: Vulkan context builder (0.99; `src/gpu/vulkan/{engine,renderer}.rs` use `vk::BackendContext::new` + `direct_contexts::make_vulkan`), Ganesh/Graphite feature split (0.153, done in `Cargo.toml`), third-party libs incl. freetype/harfbuzz updated (0.156; text pixels will likely move), FFI aliasing fixes (0.157: PDF `Document` borrows its writer -- `pdf::new_document` in `src/context/page.rs`; `TypefaceFontProvider`, `RefHandle::native_mut()` gone). **Regenerate `containers/use-static-fontconfig.patch`** against the rust-skia 0.157.0 tag or the Linux node prebuild breaks with a misleading error (`.github/workflows/build.yml` applies it with `-p1` to the vendored rust-skia checkout; verify `patch -p1 --dry-run` exits 0 with no fuzz). Then `deltas.js` vs 3.7.2 and the full suite; report to Moritz.
+5. Merge to `main`, CI green on all platforms (the new `src/node/memory.rs` has a Windows-only branch that has never been compiled), then ask Moritz for the tag. Release flow: `just release patch` (interactive), prebuilds via the draft release, un-draft, `npm run snapshot`, publish. At least linux-x64-gnu must be built.
+6. Tell studio-7b the final rev; it runs the five Cars golden cases (pixel verdict and timing) before publish. Known Studio impacts: `"high"` smoothing on every non-aligned draw (downscales change), `drawParagraph` now honours `globalAlpha`/blend (faded text may double-apply opacity), `graphics::init()` (pixels within about 1 code).
+
+## Gotchas
+
+- Benchmark only release builds: the dev build renders about 6x slower (1649 s vs 281 s on the F16 loop).
+- `process.memoryUsage().external` does not include the Node-API external-memory counter on Node 22/24; use `externalMemory()`.
+- Compare raw exports premultiplied; unpremultiplied near-transparent pixels swing by 255.
+- `new Canvas(w, h, { gpu: false })` only works from `dbbd35a8` on; for 3.7.2 comparisons set `canvas.gpu = false`.
+- Studio sessions on the old machine: studio-7b (dep, golden suite), studio-9b (production OOM). They will not be reachable from the new machine.
