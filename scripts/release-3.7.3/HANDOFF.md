@@ -44,7 +44,27 @@ Studio's loop, `studioLoopRepro.mjs <lib> 30 64` (30 blurred items x 64 motion-b
 
 The `toImage` variant pinned 30 x 64 x 7.7 MB because each accumulator's recording kept its sample rasters and the accumulators were drawn lazily onward. `studioLoopToImage.mjs` now also cuts at the accumulator; rerun it. Docs (`docs/api/canvas.md`, `toImage()`) explain the pattern.
 
-Not yet run: the 32 MB-cache variant (separates the cache's share of the speedup from its +450 MB peak).
+## Benchmarks on the new machine (release builds, Ryzen 7 6800H, AVX2, no AVX-512, Node 22.21.1)
+
+About 3x faster than the Xeon; do not mix the two tables. `studioLoop*.mjs <lib> 30 64`, two runs where given:
+
+| Build | Loop | Time | Peak RSS |
+| --- | --- | --- | --- |
+| 3.6.0 npm | 8-bit | 28.7 s | 430 MB |
+| 3.7.2 npm | F16 linear | 90.9 s, 93.5 s | 473 MB, 487 MB |
+| 3.7.2 npm | 8-bit | 18.4 s | 443 MB |
+| `dbbd35a8` (no init) | F16 linear | 118.7 s, 102.6 s | 863 MB, 861 MB |
+| `dbbd35a8` (no init) | 8-bit | 18.8 s | 870 MB |
+| `wip/3.7.3-skia-init` | F16 linear | 42.4 s, 42.5 s | 913 MB, 862 MB |
+| `wip/3.7.3-skia-init` | 8-bit | 17.6 s | 835 MB |
+| `wip/3.7.3-skia-init` | F16, `toImage` + `release` | 55.1 s | 1098 MB |
+| `wip/3.7.3-skia-init` | F16, `SKIA_CANVAS_CACHE_MB=32` | 44.5 s | 476 MB |
+
+- On this host the whole F16 speedup is `graphics::init()` (2.2x over 3.7.2); `dbbd35a8` alone is not faster than 3.7.2 here, unlike on the Xeon.
+- The 256 MB cache buys 5% (2 s) for about +440 MB peak. **Ask Moritz** whether the default should stay 256 MB or go back to 32 MB.
+- Orphaned canvases: 159 MB peak RSS. 188 probe: 188. 8-bit rounding probe: no difference at 0.1 code or more from a boundary.
+- `f16store.js` (now fed through float `ImageData`): with init 400/400 round to nearest, denormals kept; `dbbd35a8` and 3.7.2 truncate 400/400 and flush denormals to 0.
+- `deltas.js` 3.7.2 -> `dbbd35a8`: only `imageSmoothingQuality = "high"` (20/20 identical without it), max 9 codes on an 8-bit canvas and 37 codes premultiplied in 8-bit output of float canvases (the old machine reported 13 and 22; not reproduced). `dbbd35a8` -> init: 8-bit canvases identical; F32 canvases 1e-5 linear; F16 canvases one half step (2e-3 linear at HDR values), in 8-bit output at most 1 code on opaque and 2 on alpha >= 128 pixels.
 
 ## Findings to report
 
@@ -56,7 +76,7 @@ Not yet run: the 32 MB-cache variant (separates the cache's share of the speedup
 ## Pending, in order
 
 1. ~~**Build `wip/3.7.3-skia-init`** (dev)~~ Done on the new machine (Ryzen 7 6800H, AVX2, Node 22.21.1): dev build, `node --test` 220 pass, 4 skipped, rustfmt clean on `nightly-2026-05-25`. `rounding.test.js` 11/11 after switching its F16 inputs from fills to float `ImageData` (see the `SkPaint` finding); the 3.7.2 prebuild still fails its 3 F16 tests. W20 `Covered`.
-2. **Release build** (`npm run build`, about 20 min with fat LTO) and `scripts/release-3.7.3/bench.sh lib <3.7.2 lib> <3.6.0 lib>` (get 3.7.2 and 3.6.0 with `npm install phyron-skia-canvas@3.7.2` into scratch dirs). Report for Moritz: speed with vs without init (rerun on `dbbd35a8` for the without numbers if the host changed), `deltas.js` vs 3.7.2 and vs `dbbd35a8` (init's own effect), the 188 probe, F16 store probe. Fill the TODO numbers in `CHANGELOG.md`.
+2. ~~**Release build** and benchmarks~~ Done, see "Benchmarks on the new machine". `CHANGELOG.md` numbers filled in. Open for Moritz: the byte-identical question under Decisions, and the cache default.
 3. **AVX2 vs AVX-512**: Studio's golden suite tolerates 1/255 across machines; parity baselines are byte-exact and will be regenerated. Bound the ML3 (AVX2) vs ML4 (AVX-512) difference: run `deltas.js` with outputs saved on an AVX-512 host (many GitHub runners are) against an AVX2 host, or report that it could not be measured.
 4. **Skia rebase on `skia-m157`** (already on top of `wip/3.7.3-skia-init`; rebase again if that branch moves): compile and port. Breaking changes per rust-skia notes: Vulkan context builder (0.99; `src/gpu/vulkan/{engine,renderer}.rs` use `vk::BackendContext::new` + `direct_contexts::make_vulkan`), Ganesh/Graphite feature split (0.153, done in `Cargo.toml`), third-party libs incl. freetype/harfbuzz updated (0.156; text pixels will likely move), FFI aliasing fixes (0.157: PDF `Document` borrows its writer -- `pdf::new_document` in `src/context/page.rs`; `TypefaceFontProvider`, `RefHandle::native_mut()` gone). **Regenerate `containers/use-static-fontconfig.patch`** against the rust-skia 0.157.0 tag or the Linux node prebuild breaks with a misleading error (`.github/workflows/build.yml` applies it with `-p1` to the vendored rust-skia checkout; verify `patch -p1 --dry-run` exits 0 with no fuzz). Then `deltas.js` vs 3.7.2 and the full suite; report to Moritz.
 5. Merge to `main`, CI green on all platforms (the new `src/node/memory.rs` has a Windows-only branch that has never been compiled), then ask Moritz for the tag. Release flow: `just release patch` (interactive), prebuilds via the draft release, un-draft, `npm run snapshot`, publish. At least linux-x64-gnu must be built.

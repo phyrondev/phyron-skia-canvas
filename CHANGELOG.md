@@ -33,11 +33,9 @@
   default rises from Skia's 32 MB to 256 MB, a cap, not a reservation, so a
   scene that draws the same source canvases more than once does not rasterize
   them again. Set `SKIA_CANVAS_CACHE_MB=32` for the old limit. On Studio's
-  motion-blur loop (30 items x 64 half-float samples, release build, CPU)
-  3.7.3 takes 167 s where 3.7.2 took 281 s, and peak memory rises from
-  479 MB to 937 MB. <!-- TODO before release: rerun with
-  SKIA_CANVAS_CACHE_MB=32 to separate the cache's share, and with
-  graphics::init(); update these numbers. -->
+  motion-blur loop (30 items x 64 half-float samples, release build, CPU,
+  Ryzen 7 6800H) the larger cache saves 5% of the time (42 s instead of
+  45 s) and raises peak memory from 476 MB to 913 MB.
 - **Raster `drawImage` sources count against the destination.** Drawing a
   `toImage()` snapshot, raw-pixel image or `ImageData` reports its pixels for
   the destination's recording, which keeps them until reset, even after the
@@ -52,9 +50,12 @@
   step per store, biasing 8-bit sRGB output down by up to about 0.05 code
   values. The module now initializes Skia at load: half-float stores round
   to nearest and keep denormals, and CPU rendering uses SSE4.1, AVX2 or
-  AVX-512 as the host allows. **Pixels change** (by at most one code value
-  in 8-bit output), and output can now differ by that much between hosts
-  with different instruction sets.
+  AVX-512 as the host allows. On Studio's motion-blur loop (30 items x 64
+  half-float samples, release build, CPU, Ryzen 7 6800H) 3.7.3 takes 42 s
+  where 3.7.2 took 92 s; without the initialization it takes 103 to 119 s.
+  **Pixels change** (in 8-bit output of half-float canvases by at most one
+  code value on opaque pixels and two on translucent ones), and output can
+  now differ by that much between hosts with different instruction sets.
 - **`new Canvas(w, h, { gpu: false })` selects the CPU engine.** It used to
   set only the status flag: the canvas still rendered on the GPU, `.gpu` read
   `true`, and `drawImage(canvas)` took the eager path. Only the setter
