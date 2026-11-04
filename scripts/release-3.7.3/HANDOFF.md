@@ -11,12 +11,13 @@ Moving to another machine. Nothing below the "Pending" line has been compiled.
 | `wip/3.7.3-skia-init` (pushed) | On top of `main`. Dev-built and tested (step 1). `graphics::init()`, rounding tests, raster `drawImage` sources reported to V8, docs, changelog, these scripts.              |
 | `skia-m157` (pushed)           | On top of `wip/3.7.3-skia-init`. **Uncompiled.** `skia-safe` 0.97.2 -> 0.157.0 (Skia m148 -> m157), `ganesh` feature added to `vulkan` and `metal`. Nothing else ported yet. |
 
-`dbbd35a8` holds `Canvas.toImage()`, `Canvas.release()`, `Image.release()`, V8 external-memory reporting (`napi_adjust_external_memory`, read back with `externalMemory()`), the `new Canvas(w, h, { gpu: false })` fix, and Skia's raster cache at 256 MB (`SKIA_CANVAS_CACHE_MB`).
+`dbbd35a8` holds `Canvas.toImage()`, `Canvas.release()`, `Image.release()`, V8 external-memory reporting (`napi_adjust_external_memory`, read back with `externalMemory()`), the `new Canvas(w, h, { gpu: false })` fix, and Skia's raster cache at 256 MB (`SKIA_CANVAS_CACHE_MB`; the default is back to Skia's 32 MB on `wip/3.7.3-skia-init`, see Decisions).
 
 ## Decisions (Moritz)
 
 - Scope and order of 3.7.3 approved; tag and publish only with Moritz's go-ahead.
 - `skia_safe::graphics::init()` always on at module load (option A, no opt-out variable). It is on `wip/3.7.3-skia-init`.
+- Raster cache: default back to Skia's 32 MB; `SKIA_CANVAS_CACHE_MB` stays as an opt-in library option, Studio will not set it. 440 MB is too much of a pod's 18 GiB headroom for 5%; speed comes from the motion-blur fast path, smaller surfaces (PP-1633) and `graphics::init()`.
 - Skia rebase: do it; it goes into 3.7.3 only if pixels are byte-identical to 3.7.2. Otherwise report which cases differ, how many pixels and the max per-channel difference, and Moritz decides.
 - Open: Studio recommended keeping 3.7.3 byte-identical and moving `a150b9cb` (and the Skia rebase) to 3.8.0. Moritz has not answered that explicitly; `graphics::init()` already moves pixels, so ask him once the numbers below are in.
 
@@ -61,7 +62,7 @@ About 3x faster than the Xeon; do not mix the two tables. `studioLoop*.mjs <lib>
 | `wip/3.7.3-skia-init` | F16, `SKIA_CANVAS_CACHE_MB=32` | 44.5 s | 476 MB |
 
 - On this host the whole F16 speedup is `graphics::init()` (2.2x over 3.7.2); `dbbd35a8` alone is not faster than 3.7.2 here, unlike on the Xeon.
-- The 256 MB cache buys 5% (2 s) for about +440 MB peak. **Ask Moritz** whether the default should stay 256 MB or go back to 32 MB.
+- The 256 MB cache buys 5% (2 s) for about +440 MB peak; a rerun at the new 32 MB default (no variable set, `wip/3.7.3-skia-init` after the change) took 40.0 s at 467 MB peak, so the gain is within run-to-run noise. Decided: back to 32 MB (see Decisions).
 - Orphaned canvases: 159 MB peak RSS. 188 probe: 188. 8-bit rounding probe: no difference at 0.1 code or more from a boundary.
 - `f16store.js` (now fed through float `ImageData`): with init 400/400 round to nearest, denormals kept; `dbbd35a8` and 3.7.2 truncate 400/400 and flush denormals to 0.
 - `deltas.js` 3.7.2 -> `dbbd35a8`: only `imageSmoothingQuality = "high"` (20/20 identical without it), max 9 codes on an 8-bit canvas and 37 codes premultiplied in 8-bit output of float canvases (the old machine reported 13 and 22; not reproduced). `dbbd35a8` -> init: 8-bit canvases identical; F32 canvases 1e-5 linear; F16 canvases one half step (2e-3 linear at HDR values), in 8-bit output at most 1 code on opaque and 2 on alpha >= 128 pixels.

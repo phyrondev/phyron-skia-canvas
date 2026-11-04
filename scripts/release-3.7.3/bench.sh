@@ -12,7 +12,7 @@ cd "$here"
 run "F16 loop"                       studioLoopRepro.mjs   "$lib" 30 64
 run "8-bit loop"                     studioLoop8bit.mjs    "$lib" 30 64
 run "F16 loop, toImage + release"    studioLoopToImage.mjs "$lib" 30 64
-SKIA_CANVAS_CACHE_MB=32 run "F16 loop, 32 MB cache" studioLoopRepro.mjs "$lib" 30 64
+SKIA_CANVAS_CACHE_MB=256 run "F16 loop, 256 MB cache" studioLoopRepro.mjs "$lib" 30 64
 echo "== orphaned canvases";         node orphans-async.js "$lib" test
 if [[ $# -ge 2 ]]; then
   ref=$(cd "$2" && pwd)
