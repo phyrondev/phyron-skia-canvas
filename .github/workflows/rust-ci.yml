@@ -112,8 +112,9 @@ jobs:
         with:
           key: test-freetype
       - run: |
+          # every target: the suite was filtered to one integration test,
+          # which left 88 of 107 tests never running in CI (issue #41)
           cargo test \
             --no-default-features \
             --features "freetype" \
-            --lib \
-            --test native_api_contract
+            --all-targets

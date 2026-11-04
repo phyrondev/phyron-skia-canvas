@@ -48,6 +48,12 @@ pub struct PageRecorder {
     surface: RecordingSurface,
     changed: bool,
     id: usize,
+    /// Save-stack depth that `restore()` rebuilds from. Normally 1, the
+    /// recording canvas's own base. Each open `saveLayer` raises it so the
+    /// layer frame survives a matrix or clip change; `layer_floors` holds the
+    /// values to fall back to as those layers close (issue #35).
+    base_depth: usize,
+    layer_floors: Vec<usize>,
 }
 
 impl PageRecorder {
@@ -68,6 +74,8 @@ impl PageRecorder {
             bounds,
             id,
             surface: RecordingSurface::default(),
+            base_depth: 1,
+            layer_floors: vec![],
         }
     }
 
@@ -100,8 +108,9 @@ impl PageRecorder {
     }
 
     pub fn restore(&mut self) {
+        let base_depth = self.base_depth;
         if let Some(canvas) = self.current.recording_canvas() {
-            canvas.restore_to_count(1);
+            canvas.restore_to_count(base_depth);
             canvas.save();
             if let Some(clip) = &self.clip {
                 canvas.clip_path(
@@ -112,6 +121,65 @@ impl PageRecorder {
             }
             canvas.set_matrix(&self.matrix.into());
         }
+    }
+
+    /// Open a Skia layer, raising the floor `restore()` rebuilds from so the
+    /// layer frame is not torn down by the next transform or clip (issue #35).
+    ///
+    /// `f` performs the `save_layer` itself. It runs with the current clip and
+    /// matrix already applied, so the layer inherits them, and a fresh frame is
+    /// opened inside the layer afterwards for its contents.
+    pub fn open_layer<F>(&mut self, f: F)
+    where
+        F: FnOnce(&SkCanvas),
+    {
+        let base_depth = self.base_depth;
+        let clip = self.clip.clone();
+        let matrix = self.matrix;
+        let mut opened = None;
+
+        if let Some(canvas) = self.current.recording_canvas() {
+            canvas.restore_to_count(base_depth);
+            canvas.save();
+            if let Some(clip) = &clip {
+                canvas.clip_path(clip, ClipOp::Intersect, true);
+            }
+            canvas.set_matrix(&matrix.into());
+            f(canvas);
+            // The floor has to carry an identity matrix. A clip is stored in
+            // device space -- `Context2D::clip_path` transforms it by the CTM
+            // when it is set -- so both readers of this depth apply one of
+            // their own before setting a matrix: `restore` below, and the
+            // inherited clip above when this layer is nested inside another.
+            // Leaving the layer's own CTM live here transforms that clip a
+            // second time (a clip meant to end at 100 device pixels landed at
+            // 200 under `scale(2)`, and looked right at `scale(1)`).
+            canvas.reset_matrix();
+            opened = Some(canvas.save_count());
+            self.changed = true;
+        }
+
+        if let Some(depth) = opened {
+            self.layer_floors.push(base_depth);
+            self.base_depth = depth;
+            self.restore();
+        }
+    }
+
+    /// Close the innermost layer opened by [`PageRecorder::open_layer`],
+    /// compositing it onto what is behind it, and drop the floor back.
+    pub fn close_layer(&mut self) {
+        let Some(previous) = self.layer_floors.pop() else {
+            return;
+        };
+        let base_depth = self.base_depth;
+        if let Some(canvas) = self.current.recording_canvas() {
+            canvas.restore_to_count(base_depth);
+            canvas.restore(); // pops the layer frame, compositing it
+            self.changed = true;
+        }
+        self.base_depth = previous;
+        self.restore();
     }
 
     pub fn get_pixels(
@@ -1115,6 +1183,9 @@ pub struct ExportOptions {
     pub color_type: ColorType,
     /// Output colour space.
     pub color_space: ColorSpace,
+    /// `true` when the export named no colour space, so it takes the canvas
+    /// working space (`Canvas::in_working_space`).
+    pub inherits_color_space: bool,
     /// Compositing colour type (the canvas `colorType`).
     pub working_color_type: ColorType,
     /// Compositing colour space (the canvas `colorSpace`).
@@ -1143,6 +1214,7 @@ impl Default for ExportOptions {
             msaa: None,
             color_type: ColorType::RGBA8888,
             color_space: ColorSpace::new_srgb(),
+            inherits_color_space: false,
             working_color_type: ColorType::RGBA8888,
             working_color_space: ColorSpace::new_srgb(),
             premultiplied: false,

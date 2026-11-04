@@ -26,7 +26,7 @@ use crate::{
     gpu::RenderingEngine,
     gradient::{BoxedCanvasGradient, CanvasGradient},
     node::{
-        filter::{Filter, SamplingFilter, SamplingQuality},
+        filter::{Filter, SamplingFilter, SamplingQuality, ScalingOperation},
         image::ImageData,
         shader::BoxedShader,
     },
@@ -381,6 +381,10 @@ impl Context2D {
         self.bounds = Rect::from_size(dims);
         self.path = PathBuilder::default();
         self.stack = vec![];
+        // `layers` is parallel to `stack`; clearing one without the other
+        // leaves a stale entry that makes a later restore() close a layer
+        // that is not open (issue #35).
+        self.layers = vec![];
         self.state = State::default();
 
         // erase any existing content
@@ -410,8 +414,8 @@ impl Context2D {
             // If this frame opened a Skia layer (saveLayer), composite it
             // back onto the destination now with the layer's paint.
             if self.layers.pop().unwrap_or(false) {
-                self.with_canvas(|canvas| {
-                    canvas.restore();
+                self.with_recorder(|mut recorder| {
+                    recorder.close_layer();
                 });
             }
             self.state = old_state;
@@ -436,27 +440,70 @@ impl Context2D {
         bounds: Option<Rect>,
         backdrop: Option<SkImageFilter>,
     ) {
-        self.with_canvas(|canvas| {
-            let mut rec = SaveLayerRec::default();
-            if let Some(p) = paint.as_ref() {
-                rec = rec.paint(p);
-            }
-            if let Some(b) = bounds.as_ref() {
-                rec = rec.bounds(b);
-            }
-            if let Some(bd) = backdrop.as_ref() {
-                rec = rec.backdrop(bd);
-            }
-            canvas.save_layer(&rec);
+        // open_layer, not with_canvas: the layer frame has to be recorded on
+        // the recorder's save stack, or the next transform or clip tears it
+        // down (issue #35).
+        self.with_recorder(|mut recorder| {
+            recorder.open_layer(|canvas| {
+                let mut rec = SaveLayerRec::default();
+                if let Some(p) = paint.as_ref() {
+                    rec = rec.paint(p);
+                }
+                if let Some(b) = bounds.as_ref() {
+                    rec = rec.bounds(b);
+                }
+                if let Some(bd) = backdrop.as_ref() {
+                    rec = rec.backdrop(bd);
+                }
+                canvas.save_layer(&rec);
+            });
         });
         let new_state = self.state.clone();
         self.stack.push(new_state);
         self.layers.push(true);
     }
 
+    /// Run `f` against the canvas with the current `globalAlpha` and
+    /// `globalCompositeOperation` applied to what it draws.
+    ///
+    /// `with_canvas` carries the transform and clip, because those live on the
+    /// `SkCanvas`, but not the paint state -- every other draw folds that into
+    /// a `Paint` it builds. A draw that paints with its own paints, as
+    /// `Paragraph::paint` does, has nowhere to fold it, so it composited as
+    /// though `globalAlpha` were 1 and the blend mode `source-over`
+    /// (issue #36).
+    ///
+    /// The layer is what makes the two apply to the drawing as a group, which
+    /// is the Canvas2D semantic: `destination-out` has to erase where the
+    /// glyphs land, not per-glyph against a blank layer. Skipped when there is
+    /// nothing to apply, so the common case costs no offscreen.
+    pub fn with_composited_canvas<F>(&self, f: F)
+    where
+        F: FnOnce(&SkCanvas),
+    {
+        let alpha = self.state.global_alpha;
+        let blend = self.state.global_composite_operation;
+
+        match alpha == 1.0 && blend == BlendMode::SrcOver {
+            true => self.with_canvas(f),
+            false => self.with_canvas(|canvas| {
+                let mut paint = Paint::default();
+                paint.set_alpha_f(alpha);
+                paint.set_blend_mode(blend);
+
+                canvas.save_layer(&SaveLayerRec::default().paint(&paint));
+                f(canvas);
+                canvas.restore();
+            }),
+        }
+    }
+
     pub fn scoot(&mut self, point: Point) {
-        // update initial point if first drawing command isn't a moveTo
-        if self.path.snapshot().is_empty() {
+        // update initial point if first drawing command isn't a moveTo.
+        // `is_empty()` asks the builder; `snapshot()` copies the whole path,
+        // and this runs before every appended segment, which made path
+        // construction quadratic (issue #33).
+        if self.path.is_empty() {
             self.path.move_to(point);
         }
     }
@@ -484,6 +531,16 @@ impl Context2D {
             && self.state.fill_style.is_opaque()
             && self.state.global_alpha == 1.0
             && self.state.clip.is_none()
+            // ...and no layer is open. The erase discards the whole recorder,
+            // an open `saveLayer` with it, so a full-page fill inside a layer
+            // destroyed the layer instead of painting into it (issue #35).
+            && !self.layers.iter().any(|owns_layer| *owns_layer)
+            // ...and nothing stands between the fill and the page. A filter
+            // decides what the draw finally puts down, and it may put down
+            // less than the path covers, or nothing at all.
+            && self.state.skia_image_filter.is_none()
+            && self.state.skia_color_filter.is_none()
+            && self.state.skia_mask_filter.is_none()
             && path.conservatively_contains_rect(self.bounds)
         {
             // ...erase existing vector content layers (but preserve CTM & clip
@@ -639,7 +696,12 @@ impl Context2D {
     }
 
     pub fn clear_rect(&mut self, rect: &Rect) {
-        match self.state.matrix.map_rect(rect).0.contains(self.bounds) {
+        // an open layer takes the painted branch: clearing inside a layer
+        // clears the layer, not the page behind it (issue #35)
+        let erasable = !self.layers.iter().any(|owns_layer| *owns_layer);
+        match erasable
+            && self.state.matrix.map_rect(rect).0.contains(self.bounds)
+        {
             // if rect fully encloses canvas, erase existing content (but
             // preserve CTM & clip path)
             true => self.with_recorder(|mut recorder| {
@@ -704,8 +766,15 @@ impl Context2D {
         dst_rect: &Rect,
     ) {
         let paint = self.paint_for_image();
+        // the whole local-to-device transform decides the direction, so the
+        // canvas transform counts as well as the src -> dst fit (issue #38)
+        let scaling = ScalingOperation::for_matrix(&Matrix::concat(
+            &self.state.matrix,
+            &Matrix::rect_to_rect(*src_rect, *dst_rect, None)
+                .unwrap_or_else(Matrix::new_identity),
+        ));
         self.render_to_canvas(&paint, |canvas, paint| {
-            let sampling = self.state.sampling_filter.sampling();
+            let sampling = self.state.sampling_filter.sampling_for(scaling);
             canvas.draw_image_rect_with_sampling_options(
                 image,
                 Some((src_rect, Strict)),

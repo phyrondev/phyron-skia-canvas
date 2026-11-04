@@ -985,13 +985,15 @@ pub fn image_data_export_arg(
         Some(obj) => {
             let color_type = opt_color_type_for_key(cx, &obj, "colorType")?
                 .unwrap_or(ColorType::RGBA8888);
-            let color_space = opt_color_space_for_key(cx, &obj, "colorSpace")?
-                .unwrap_or_else(ColorSpace::new_srgb);
+            let space = opt_color_space_for_key(cx, &obj, "colorSpace")?;
+            let color_space =
+                space.clone().unwrap_or_else(ColorSpace::new_srgb);
             let (premultiplied, hdr_reference_white) =
                 output_alpha_and_white_args(cx, &obj)?;
             Ok(ExportOptions {
                 color_type,
                 color_space,
+                inherits_color_space: space.is_none(),
                 premultiplied,
                 hdr_reference_white,
                 matte: opt_color_for_key(cx, &obj, "matte"),
@@ -1258,8 +1260,8 @@ pub fn export_options_arg(
     let text_gamma = float_for_key(cx, &opts, "textGamma")?;
     let outline = bool_for_key(cx, &opts, "outline")?;
 
-    let color_space = opt_color_space_for_key(cx, &opts, "colorSpace")?
-        .unwrap_or_else(ColorSpace::new_srgb);
+    let space = opt_color_space_for_key(cx, &opts, "colorSpace")?;
+    let color_space = space.clone().unwrap_or_else(ColorSpace::new_srgb);
     let (premultiplied, hdr_reference_white) =
         output_alpha_and_white_args(cx, &opts)?;
 
@@ -1272,6 +1274,7 @@ pub fn export_options_arg(
         msaa,
         color_type,
         color_space,
+        inherits_color_space: space.is_none(),
         premultiplied,
         hdr_reference_white,
         jpeg_downsample,

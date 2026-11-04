@@ -563,6 +563,43 @@ describe("Studio compositing paths (contracts/working-space.md W11-W13)", () => 
     },
     LINEAR_HALF = Math.round(srgbEncode(0.5) * 255); // 188; a gamma blend gives 128
 
+  // W14 (issue #34)
+  test("an export without colorSpace uses the canvas working space", async () => {
+    let p3 = cpuCanvas(4, 4, { colorSpace: "display-p3" }),
+      ctx = p3.getContext("2d");
+    ctx.fillStyle = "red";
+    ctx.fillRect(0, 0, 4, 4);
+    let png = await p3.toBuffer("png");
+    assert.ok(png.includes(Buffer.from("iCCP")), "P3 canvas writes an ICC profile");
+    assert.ok(!png.includes(Buffer.from("sRGB")), "no sRGB chunk");
+
+    // a linear float canvas reads back linear, not sRGB-encoded
+    let linear = cpuCanvas(1, 1, LINEAR_F32),
+      lctx = linear.getContext("2d");
+    lctx.fillStyle = [0.5, 0.5, 0.5, 1];
+    lctx.fillRect(0, 0, 1, 1);
+    let [r] = floats(await linear.toBuffer("raw", { colorType: "RGBAF32" }));
+    near(r, 0.5, 1e-3, "inherited linear space");
+    assert.equal(
+      linear.getContext("2d").getImageData(0, 0, 1, 1, { colorType: "RGBAF32" })
+        .colorSpace,
+      "srgb-linear",
+    );
+
+    // an explicit colorSpace still wins
+    let [enc] = floats(
+      await linear.toBuffer("raw", { colorType: "RGBAF32", colorSpace: "srgb" }),
+    );
+    near(enc, srgbEncode(0.5), 1e-3, "explicit srgb");
+
+    // the default canvas is unchanged: 8-bit sRGB
+    let plain = cpuCanvas(1, 1),
+      pctx = plain.getContext("2d");
+    pctx.fillStyle = "red";
+    pctx.fillRect(0, 0, 1, 1);
+    assert.deepEqual(Array.from(await plain.toBuffer("raw", {})), [255, 0, 0, 255]);
+  });
+
   // W11
   test("8-bit sRGB output of a float linear canvas blends linearly", async () => {
     assert.equal(LINEAR_HALF, 188);

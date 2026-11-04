@@ -433,8 +433,45 @@ pub struct SamplingFilter {
     pub quality: SamplingQuality,
 }
 
+/// Which way a draw scales its source, mirroring Chrome's
+/// `cc::PaintFlags::ScalingOperation`. Only `High` consults it (issue #38).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScalingOperation {
+    /// Anything that is not a strict upscale, including every minification.
+    Unknown,
+    /// Scaling up on both axes.
+    Upscale,
+}
+
+impl ScalingOperation {
+    /// Port of `MatrixToScalingOperation` in Chrome's `cc/paint/paint_op.cc`:
+    /// an upscale is a decomposable matrix whose scale exceeds 1 on both axes.
+    ///
+    /// `matrix` is the whole local-to-device transform, so the canvas's own
+    /// transform counts: a 2x `drawImage` under a 0.25x CTM is a minification.
+    pub fn for_matrix(matrix: &Matrix) -> Self {
+        match matrix.decompose_scale(None) {
+            Some(scale) if scale.width > 1.0 && scale.height > 1.0 => {
+                Self::Upscale
+            }
+            _ => Self::Unknown,
+        }
+    }
+}
+
 impl SamplingFilter {
+    /// Sampling for a draw whose scaling direction is unknown.
     pub fn sampling(&self) -> SamplingOptions {
+        self.sampling_for(ScalingOperation::Unknown)
+    }
+
+    /// Chrome's mapping for `imageSmoothingQuality = "high"`:
+    /// an upscale takes Mitchell, anything else takes trilinear.
+    ///
+    /// This fork used Mitchell for every case, which matches no engine. A cubic
+    /// resampler sets `use_cubic`, and Skia then ignores the mipmap chain, so
+    /// heavy minification aliased where trilinear does not (issue #38).
+    pub fn sampling_for(&self, op: ScalingOperation) -> SamplingOptions {
         let quality = if self.smoothing {
             self.quality
         } else {
@@ -450,12 +487,14 @@ impl SamplingFilter {
             SamplingQuality::Medium => {
                 SamplingOptions::new(FilterMode::Linear, MipmapMode::Linear)
             }
-            // Mitchell-Netravali bicubic -- the highest-quality sampler,
-            // matching CanvasKit's drawImageCubic for high-quality
-            // down/upscales (Medium stays trilinear).
-            SamplingQuality::High => {
-                SamplingOptions::from(CubicResampler::mitchell())
-            }
+            SamplingQuality::High => match op {
+                ScalingOperation::Unknown => {
+                    SamplingOptions::new(FilterMode::Linear, MipmapMode::Linear)
+                }
+                ScalingOperation::Upscale => {
+                    SamplingOptions::from(CubicResampler::mitchell())
+                }
+            },
         }
     }
 }

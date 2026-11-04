@@ -84,8 +84,10 @@ the blend result.
   "RGBAF32"` and `colorSpace` `srgb-linear` or `rec2020-linear`, and then
   `putImageData` with the result, then the values round-trip unclamped within
   `1e-5`.
-- Given an export without `colorType` and `colorSpace`, then the output is
-  `RGBA8888` `srgb`, as today.
+- Given an export without `colorSpace`, then the output is the canvas working
+  space, so `new Canvas(w, h, { colorSpace: "display-p3" }).toFile("out.png")`
+  writes a Display P3 file. Given an export without `colorType`, the output is
+  `RGBA8888`, as before.
 
 ### User Story 1: Raw export in the requested colour space (P1)
 
@@ -220,6 +222,10 @@ to succeed, so that the output does not depend on the host.
   `display-p3` is clipped to the sRGB gamut, and a `RGBAF32` export of an 8-bit
   canvas has 8-bit precision. Mitigation: document that the canvas settings
   set precision and gamut; the release notes say so.
+- R0 now also changes the file for anyone who sets a canvas `colorSpace` and
+  exports without options: a linear canvas writes a linear-tagged PNG, a P3
+  canvas a P3 file. Mitigation: pass an explicit `colorSpace` to keep sRGB
+  output.
 - R0 changes Studio server renders: today they blend in gamma space (50%
   white over black is 128), and after R0 a linear working canvas blends
   linearly (188), like the CanvasKit editor. Studio's byte-identical parity
@@ -246,7 +252,9 @@ Session 2026-09-17:
   and float `ImageData` keep precision, gamut and range? A: Yes. Added to User
   Story 0.
 - Q: What is the output encoding when the export gives no colour options?
-  A: `RGBA8888` `srgb`, unchanged.
+  A: (revised 2026-09-18, issue #34) The canvas colour space, and `RGBA8888`.
+  A canvas-level `colorSpace` must reach the file; the bit depth stays
+  predictable unless `colorType` asks for more.
 
 - Q: Is the `cICP` chunk for PQ and HLG PNG in scope? A: No. The render
   service writes files with citra. This fork renders and reads back pixels.

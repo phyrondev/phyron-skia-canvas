@@ -41,8 +41,28 @@ impl Path2D {
         self.builder.snapshot()
     }
 
+    /// Append a conic, degenerating to a line for a non-positive weight.
+    ///
+    /// `SkPath::conicTo` did this itself; `SkPathBuilder::conicTo` stores the
+    /// weight as given, and a negative weight makes the rational denominator
+    /// cross zero, which is undefined rather than merely different (issue #32).
+    pub fn conic_or_line(
+        &mut self,
+        ctrl: impl Into<Point>,
+        end: impl Into<Point>,
+        weight: f32,
+    ) {
+        let end = end.into();
+        if weight > 0.0 {
+            self.builder.conic_to(ctrl, end, weight);
+        } else {
+            self.builder.line_to(end);
+        }
+    }
+
     pub fn scoot(&mut self, x: f32, y: f32) {
-        if self.builder.snapshot().is_empty() {
+        // `is_empty()`, not `snapshot()`: see `Context2D::scoot` (issue #33).
+        if self.builder.is_empty() {
             self.builder.move_to((x, y));
         }
     }
@@ -256,7 +276,7 @@ pub fn conicCurveTo(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         float_args_or_bail(&mut cx, &["cpx", "cpy", "x", "y", "weight"])?;
     if let [p1x, p1y, p2x, p2y, weight] = nums.as_slice() {
         this.scoot(*p1x, *p1y);
-        this.builder.conic_to((*p1x, *p1y), (*p2x, *p2y), *weight);
+        this.conic_or_line((*p1x, *p1y), (*p2x, *p2y), *weight);
     }
 
     Ok(cx.undefined())
@@ -392,7 +412,11 @@ pub fn roundRect(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         } else {
             PathDirection::CCW
         };
-        this.builder.add_rrect(rrect, direction, None);
+        // Start index 0, not Skia's m86 default of 6 (CW) / 7 (CCW): the
+        // HTML spec starts the subpath at (x + top-left radius, y). The shape
+        // is the same either way, but the start decides where the current
+        // point lands and where a dash phase begins (issue #32).
+        this.builder.add_rrect(rrect, direction, 0);
     }
 
     Ok(cx.undefined())

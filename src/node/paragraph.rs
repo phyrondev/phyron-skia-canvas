@@ -11,9 +11,10 @@ use skia_safe::{
     textlayout::{
         FontCollection, Paragraph as SkParagraph,
         ParagraphBuilder as SkParagraphBuilder, ParagraphStyle,
-        PlaceholderStyle, RectHeightStyle, RectWidthStyle, StrutStyle,
-        TextAlign, TextDecoration, TextDecorationMode, TextDecorationStyle,
-        TextDirection, TextHeightBehavior, TextShadow, TextStyle,
+        PlaceholderAlignment, PlaceholderStyle, RectHeightStyle,
+        RectWidthStyle, StrutStyle, TextAlign, TextBaseline, TextDecoration,
+        TextDecorationMode, TextDecorationStyle, TextDirection,
+        TextHeightBehavior, TextShadow, TextStyle,
     },
 };
 
@@ -108,6 +109,11 @@ fn parse_text_style(
     //   * a `[r, g, b, a]` float array -- tagged here as `srgb_linear` so Skia
     //     converts to the destination working color space at paint time instead
     //     of treating the linear values as sRGB-encoded.
+    // Remembered so an unspecified `decorationColor` can fall back to it. The
+    // text colour goes in as a foreground *paint*, which leaves
+    // `TextStyle::color` at its default, so the decoration cannot read it back
+    // from the style (issue #36).
+    let mut text_color = None;
     if let Ok(color_val) = obj.get::<JsValue, _, _>(cx, "color")
         && let Some((color4f, cs)) = color4f_in(cx, color_val)
     {
@@ -115,6 +121,10 @@ fn parse_text_style(
         let cs = cs.unwrap_or_else(ColorSpace::new_srgb_linear);
         paint.set_color4f(color4f, Some(&cs));
         style.set_foreground_paint(&paint);
+        text_color = Some(match cs.is_srgb() {
+            true => color4f.to_color(),
+            false => linear_color4f_to_srgb_color(&color4f),
+        });
     }
     if let Ok(color_val) = obj.get::<JsValue, _, _>(cx, "foregroundColor")
         && let Some((color4f, cs)) = color4f_in(cx, color_val)
@@ -203,15 +213,21 @@ fn parse_text_style(
     // treats as sRGB-encoded, so the linear-array path must gamma-encode
     // before quantizing -- otherwise Skia's implicit decode darkens the
     // decoration and drops the alpha precision the caller asked for.
+    let mut decoration_color = None;
     if let Ok(color_val) = obj.get::<JsValue, _, _>(cx, "decorationColor")
         && let Some((color4f, cs)) = color4f_in(cx, color_val)
     {
-        let sk_color = if cs.is_some() {
+        decoration_color = Some(if cs.is_some() {
             color4f.to_color()
         } else {
             linear_color4f_to_srgb_color(&color4f)
-        };
-        style.set_decoration_color(sk_color);
+        });
+    }
+    // Fall back to the text colour, as CSS `currentColor` does. Skia defaults
+    // the decoration colour to its own white, so leaving it unset drew the
+    // decoration in the wrong colour (issue #36).
+    if let Some(color) = decoration_color.or(text_color) {
+        style.set_decoration_color(color);
     }
 
     // decorationThickness
@@ -511,17 +527,40 @@ pub fn addPlaceholder(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let this = cx.argument::<BoxedParagraphBuilder>(0)?;
     let width = float_arg_or_bail(&mut cx, 1, "width")?;
     let height = float_arg_or_bail(&mut cx, 2, "height")?;
-    let _align = opt_float_arg(&mut cx, 3).unwrap_or(0.0);
-    let _baseline = opt_float_arg(&mut cx, 4).unwrap_or(0.0);
+    // Both were read and discarded, so every placeholder laid out on the
+    // baseline whatever the caller asked for. The numbering is CanvasKit's
+    // (issue #36).
+    let alignment = match opt_float_arg(&mut cx, 3).unwrap_or(0.0) as i32 {
+        0 => PlaceholderAlignment::Baseline,
+        1 => PlaceholderAlignment::AboveBaseline,
+        2 => PlaceholderAlignment::BelowBaseline,
+        3 => PlaceholderAlignment::Top,
+        4 => PlaceholderAlignment::Bottom,
+        5 => PlaceholderAlignment::Middle,
+        other => {
+            return cx.throw_type_error(format!(
+                "Unknown placeholder align {other} (expected 0 to 5)"
+            ));
+        }
+    };
+    let baseline = match opt_float_arg(&mut cx, 4).unwrap_or(0.0) as i32 {
+        0 => TextBaseline::Alphabetic,
+        1 => TextBaseline::Ideographic,
+        other => {
+            return cx.throw_type_error(format!(
+                "Unknown placeholder baseline {other} (expected 0 or 1)"
+            ));
+        }
+    };
     let offset = opt_float_arg(&mut cx, 5).unwrap_or(0.0);
 
-    // Use default alignment and baseline for simplicity
-    let placeholder = PlaceholderStyle::default();
     let placeholder = PlaceholderStyle {
         width,
         height,
+        alignment,
+        baseline,
         baseline_offset: offset,
-        ..placeholder
+        ..PlaceholderStyle::default()
     };
 
     let mut this = this.borrow_mut();
@@ -786,7 +825,10 @@ pub fn drawParagraph(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let para = para.borrow_mut();
     let ctx = ctx.borrow();
 
-    ctx.with_canvas(|canvas| {
+    // Composited, not bare: `Paragraph::paint` uses the text styles' own
+    // paints, so globalAlpha and globalCompositeOperation have nowhere else to
+    // apply (issue #36).
+    ctx.with_composited_canvas(|canvas| {
         para.paragraph.paint(canvas, Point::new(x, y));
     });
 

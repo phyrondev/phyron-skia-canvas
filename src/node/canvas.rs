@@ -63,7 +63,14 @@ impl Canvas {
 
     /// `opts` with this canvas's colour type and space as the working space.
     pub fn in_working_space(&self, opts: ExportOptions) -> ExportOptions {
+        // an export that named no colour space writes the working space, so
+        // `new Canvas(w, h, { colorSpace })` reaches the file
+        let color_space = match opts.inherits_color_space {
+            true => self.color_space.clone(),
+            false => opts.color_space.clone(),
+        };
         ExportOptions {
+            color_space,
             working_color_type: self.color_type,
             working_color_space: self.color_space.clone(),
             fallback: self.fallback.clone(),

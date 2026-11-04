@@ -4,6 +4,7 @@ use skia_safe::{
     Matrix, PaintStyle,
     PaintStyle::{Fill, Stroke},
     Path, PathBuilder, PathDirection, Point, RRect, Rect, Size,
+    path::AddPathMode,
     textlayout::TextDirection,
 };
 use std::{cell::RefCell, f32::consts::PI};
@@ -335,7 +336,11 @@ pub fn roundRect(mut cx: FunctionContext) -> JsResult<JsUndefined> {
 
         let matrix = this.state.matrix;
         let mut temp = PathBuilder::new();
-        temp.add_rrect(rrect, direction, None);
+        // Start index 0, not Skia's m86 default of 6 (CW) / 7 (CCW): the
+        // HTML spec starts the subpath at (x + top-left radius, y). The shape
+        // is the same either way, but the start decides where the current
+        // point lands and where a dash phase begins (issue #32).
+        temp.add_rrect(rrect, direction, 0);
         let path = temp.snapshot().make_transform(&matrix);
         this.path.add_path(&path, None);
     }
@@ -364,7 +369,10 @@ pub fn arc(mut cx: FunctionContext) -> JsResult<JsUndefined> {
             ccw,
         );
         let path = arc.path().make_transform(&matrix);
-        this.path.add_path(&path, None);
+        // Extend, not Append: an arc continues the current subpath (HTML
+        // spec). Appending starts a new contour, which strokes the same but
+        // fills as a separate region (issue #32).
+        this.path.add_path(&path, AddPathMode::Extend);
     }
     Ok(cx.undefined())
 }
@@ -403,7 +411,10 @@ pub fn ellipse(mut cx: FunctionContext) -> JsResult<JsUndefined> {
             ccw,
         );
         let path = arc.path().make_transform(&matrix);
-        this.path.add_path(&path, None);
+        // Extend, not Append: an arc continues the current subpath (HTML
+        // spec). Appending starts a new contour, which strokes the same but
+        // fills as a separate region (issue #32).
+        this.path.add_path(&path, AddPathMode::Extend);
     }
     Ok(cx.undefined())
 }
@@ -486,7 +497,12 @@ pub fn conicCurveTo(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         float_args_or_bail(&mut cx, &["cpx", "cpy", "x", "y", "weight"])?;
     if let [src, dst] = this.map_points(&args[..4]).as_slice() {
         this.scoot(*src);
-        this.path.conic_to((src.x, src.y), (dst.x, dst.y), args[4]);
+        // a non-positive weight degenerates to a line (issue #32); see
+        // `Path2D::conic_or_line`
+        match args[4] > 0.0 {
+            true => this.path.conic_to((src.x, src.y), (dst.x, dst.y), args[4]),
+            false => this.path.line_to((dst.x, dst.y)),
+        };
     }
     Ok(cx.undefined())
 }
