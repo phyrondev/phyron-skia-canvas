@@ -48,6 +48,7 @@ node-addon = []
 freetype = ["skia-safe/embed-freetype", "skia-safe/freetype-woff2"]
 metal = [
     "skia-safe/metal",
+    "skia-safe/ganesh",
     "dep:metal",
     "dep:raw-window-handle",
     "dep:raw-window-metal",
@@ -55,7 +56,7 @@ metal = [
     "dep:cocoa",
     "dep:objc",
 ]
-vulkan = ["skia-safe/vulkan", "winit/rwh_05", "dep:ash", "dep:vulkano"]
+vulkan = ["skia-safe/vulkan", "skia-safe/ganesh", "winit/rwh_05", "dep:ash", "dep:vulkano"]
 window = ["dep:winit", "dep:spin_sleep"]
 
 [package.metadata.docs.rs]
@@ -102,7 +103,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 # 0.97.2 is the first release whose tarball ships `bindings_docs.rs`, so
 # it's the floor that lets docs.rs build (rust-skia/rust-skia#1286).
-skia-safe = { version = "0.97.2", features = ["textlayout", "webp", "svg"] }
+skia-safe = { version = "0.157.0", features = ["textlayout", "webp", "svg"] }
 spin_sleep = { version = "1", optional = true }
 vulkano = { version = "0.35", optional = true }
 
