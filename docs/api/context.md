@@ -390,10 +390,13 @@ getImageData(sx, sy, sw, sh, {colorType="rgba", colorSpace, density, matte, msaa
 ```
 
 `getImageData()` without a `colorSpace` reads back the canvas working space
-(since 3.7.3; it was `"srgb"` before). On a linear or P3 canvas, pass
-`colorSpace: "srgb"` to keep sRGB-encoded bytes, and prefer a float
-`colorType` for a linear read-back, since 8-bit linear values band in the
-darks.
+(since 3.7.3; it was `"srgb"` before). A linear working space read at 8 bits
+per channel comes back in the non-linear space with the same primaries
+(`srgb-linear` as `srgb`, `display-p3-linear` as `display-p3`,
+`rec2020-linear` as `rec2020`; since 3.7.4), because 8-bit linear values
+merge the darkest sRGB codes. A float or 16-bit `colorType` reads back linear.
+The returned `ImageData`'s `colorSpace` names the space you got. On a P3
+canvas, pass `colorSpace: "srgb"` to keep sRGB-encoded bytes.
 
 These methods behave identically to the standard [createImageData()][createImageData()] and [getImageData()][getImageData()] methods but have been extended to also accept an optional `colorType` value in their settings argument. The `colorType` defines the arrangement of individual color components in the ImageData's pixel array. If omitted, the type will default to `"rgba"`, but any of the [supported color types][imgdata_colortype] can be specified instead.
 

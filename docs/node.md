@@ -333,8 +333,13 @@ Two settings control colour:
   default is `RGBA8888` in `srgb`.
 - The export options, `toBuffer(format, { colorType, colorSpace })` and
   `getImageData(x, y, w, h, { colorType, colorSpace })`, set the **output
-  encoding**. The pixels are converted once, when they are read. The default is
-  `RGBA8888` in `srgb`.
+  encoding**. The pixels are converted once, when they are read. The default
+  colour type is `RGBA8888`, and the default colour space is the working
+  space. A linear working space written at 8 bits per channel (8-bit colour
+  types, and JPEG and WebP always) is encoded in the non-linear space with the
+  same primaries instead: `srgb-linear` as `srgb`, `display-p3-linear` as
+  `display-p3`, `rec2020-linear` as `rec2020`. 8-bit linear values would merge
+  the 32 darkest sRGB codes into 5.
 
 Set precision and gamut on the canvas. An 8-bit `srgb` canvas exported as
 `RGBAF32` in `display-p3` has 8-bit precision and the sRGB gamut.

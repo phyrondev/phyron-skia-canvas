@@ -5,7 +5,19 @@
 > - **crates.io** (Rust crate `skia-canvas`): semver-tracked, starts at `0.1.0`.
 > - **npm** (Node addon `phyron-skia-canvas`): tracks the upstream `skia-canvas` lineage; current `v3.5.x`.
 
-<!--## 🥚 ⟩ [Unreleased]-->
+## 🥚 ⟩ [Unreleased]
+
+### Fixes
+
+- **8-bit output of a linear canvas keeps the shadows.** Since 3.7.3 an export
+  or `getImageData()` that names no `colorSpace` takes the canvas working
+  space (issue #34). For a linear working space at 8 bits per channel that
+  stored linear values in 8 bits and merged the 32 darkest sRGB codes into 5
+  (raw, `getImageData()`, PNG, JPEG and WebP). Such output is now encoded in
+  the non-linear space with the same primaries: `srgb-linear` as `srgb`,
+  `display-p3-linear` as `display-p3`, `rec2020-linear` as `rec2020`. Float
+  and 16-bit colour types, and an explicit `colorSpace`, are unchanged.
+  `ImageData.colorSpace` names the space returned.
 
 ## 📦 ⟩ [v3.7.3] (npm) ⟩ November 4, 2026
 

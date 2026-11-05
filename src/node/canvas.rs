@@ -70,9 +70,14 @@ impl Canvas {
     /// `opts` with this canvas's colour type and space as the working space.
     pub fn in_working_space(&self, opts: ExportOptions) -> ExportOptions {
         // an export that named no colour space writes the working space, so
-        // `new Canvas(w, h, { colorSpace })` reaches the file
+        // `new Canvas(w, h, { colorSpace })` reaches the file; 8-bit output of
+        // a linear working space is encoded non-linearly
         let color_space = match opts.inherits_color_space {
-            true => self.color_space.clone(),
+            true => inherited_color_space(
+                &self.color_space,
+                opts.color_type,
+                &opts.format,
+            ),
             false => opts.color_space.clone(),
         };
         ExportOptions {

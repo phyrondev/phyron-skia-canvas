@@ -472,6 +472,10 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
 
     cx.export_function("backend", backend)?;
     cx.export_function("colorSpaceName", utils::color_space_name)?;
+    cx.export_function(
+        "inheritedColorSpace",
+        utils::inherited_color_space_name,
+    )?;
     cx.export_function("releaseGpuContexts", release_gpu_contexts)?;
 
     // -- Canvas ------------------------------------------------------------------------------------

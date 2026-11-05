@@ -600,6 +600,64 @@ describe("Studio compositing paths (contracts/working-space.md W11-W13)", () => 
     assert.deepEqual(Array.from(await plain.toBuffer("raw", {})), [255, 0, 0, 255]);
   });
 
+  // W21
+  test("8-bit output without colorSpace encodes a linear canvas non-linearly", async () => {
+    // the 32 darkest sRGB codes: 8-bit linear keeps 5 of them
+    const shadows = (colorSpace) => {
+      let canvas = cpuCanvas(32, 1, { colorType: "RGBAF16", colorSpace }),
+        ctx = canvas.getContext("2d");
+      for (let i = 0; i < 32; i++) {
+        ctx.fillStyle = `rgb(${i},${i},${i})`;
+        ctx.fillRect(i, 0, 1, 1);
+      }
+      return canvas;
+    };
+
+    for (const [linear, encoded] of [
+      ["srgb-linear", "srgb"],
+      ["display-p3-linear", "display-p3"],
+      ["rec2020-linear", "rec2020"],
+    ]) {
+      let canvas = shadows(linear),
+        ctx = canvas.getContext("2d"),
+        bare = ctx.getImageData(0, 0, 32, 1),
+        explicit = ctx.getImageData(0, 0, 32, 1, { colorSpace: encoded });
+      assert.equal(bare.colorSpace, encoded, `${linear} getImageData label`);
+      assert.deepEqual(bare.data, explicit.data, `${linear} getImageData`);
+      for (const format of ["raw", "png", "jpg", "webp"]) {
+        assert.deepEqual(
+          await canvas.toBuffer(format),
+          await canvas.toBuffer(format, { colorSpace: encoded }),
+          `${linear} ${format}`,
+        );
+      }
+      // float output keeps the linear space
+      assert.equal(
+        ctx.getImageData(0, 0, 1, 1, { colorType: "RGBAF16" }).colorSpace,
+        linear,
+      );
+    }
+
+    // every shadow code survives a PNG round trip
+    let png = await loadImage(await shadows("srgb-linear").toBuffer("png")),
+      decoded = cpuCanvas(32, 1),
+      dctx = decoded.getContext("2d");
+    dctx.drawImage(png, 0, 0);
+    assert.deepEqual(
+      Array.from(dctx.getImageData(0, 0, 32, 1).data).filter(
+        (_, i) => i % 4 == 0,
+      ),
+      Array.from({ length: 32 }, (_, i) => i),
+    );
+
+    // a non-linear working space is kept
+    let p3 = cpuCanvas(1, 1, { colorSpace: "display-p3" });
+    assert.equal(
+      p3.getContext("2d").getImageData(0, 0, 1, 1).colorSpace,
+      "display-p3",
+    );
+  });
+
   // W11
   test("8-bit sRGB output of a float linear canvas blends linearly", async () => {
     assert.equal(LINEAR_HALF, 188);

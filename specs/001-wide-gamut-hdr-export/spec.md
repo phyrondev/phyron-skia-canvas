@@ -87,7 +87,10 @@ the blend result.
 - Given an export without `colorSpace`, then the output is the canvas working
   space, so `new Canvas(w, h, { colorSpace: "display-p3" }).toFile("out.png")`
   writes a Display P3 file. Given an export without `colorType`, the output is
-  `RGBA8888`, as before.
+  `RGBA8888`, as before. Given a linear working space and 8-bit output (an
+  8-bit `colorType`, JPEG or WebP) without `colorSpace`, then the output is the
+  non-linear space with the same primaries (`srgb`, `display-p3`, `rec2020`),
+  so the 32 darkest sRGB codes survive (3.7.4).
 
 ### User Story 1: Raw export in the requested colour space (P1)
 
@@ -223,9 +226,10 @@ to succeed, so that the output does not depend on the host.
   canvas has 8-bit precision. Mitigation: document that the canvas settings
   set precision and gamut; the release notes say so.
 - R0 now also changes the file for anyone who sets a canvas `colorSpace` and
-  exports without options: a linear canvas writes a linear-tagged PNG, a P3
-  canvas a P3 file. Mitigation: pass an explicit `colorSpace` to keep sRGB
-  output.
+  exports without options: a P3 canvas writes a P3 file. Mitigation: pass an
+  explicit `colorSpace` to keep sRGB output. 3.7.3 also wrote 8-bit linear
+  values for a linear canvas, which merged the darkest codes; 3.7.4 encodes
+  8-bit output of a linear space non-linearly (W21).
 - R0 changes Studio server renders: today they blend in gamma space (50%
   white over black is 128), and after R0 a linear working canvas blends
   linearly (188), like the CanvasKit editor. Studio's byte-identical parity

@@ -1105,6 +1105,71 @@ pub fn from_color_space(color_space: &ColorSpace) -> Option<&'static str> {
     })
 }
 
+/// `true` when `color_type` stores linear light without banding: float or
+/// 16-bit channels, or `SRGBA8888`, which encodes with the sRGB curve.
+fn holds_linear_light(color_type: ColorType) -> bool {
+    matches!(
+        color_type,
+        ColorType::RGBAF16
+            | ColorType::RGBAF16Norm
+            | ColorType::RGBAF32
+            | ColorType::A16Float
+            | ColorType::R16G16Float
+            | ColorType::A16UNorm
+            | ColorType::R16G16UNorm
+            | ColorType::R16G16B16A16UNorm
+            | ColorType::SRGBA8888
+    )
+}
+
+/// The output colour space of an export or `getImageData()` that named none.
+///
+/// It is the canvas working space, so a P3 canvas writes a P3 file. A linear
+/// working space read out at 8 bits per channel, or into JPEG or WebP, which
+/// are always 8-bit, is encoded with the non-linear space of the same
+/// primaries instead: 8-bit linear values keep 183 of 256 sRGB levels and
+/// merge the darkest 32 into 5.
+pub fn inherited_color_space(
+    working: &ColorSpace,
+    color_type: ColorType,
+    format: &str,
+) -> ColorSpace {
+    let eight_bit = matches!(format, "jpg" | "jpeg" | "webp")
+        || !holds_linear_light(color_type);
+    let encoded = match from_color_space(working) {
+        Some("srgb-linear") => Some("srgb"),
+        Some("display-p3-linear") => Some("display-p3"),
+        Some("rec2020-linear") => Some("rec2020"),
+        _ => None,
+    };
+    encoded
+        .filter(|_| eight_bit)
+        .and_then(|name| to_color_space(name).ok())
+        .unwrap_or_else(|| working.clone())
+}
+
+/// `inheritedColorSpace(workingSpace, colorType)`: the canonical name of the
+/// colour space `getImageData()` returns when it names none (see
+/// [`inherited_color_space`]). Throws a `TypeError` for an unknown name.
+pub fn inherited_color_space_name(
+    mut cx: FunctionContext,
+) -> JsResult<JsString> {
+    let space = string_arg(&mut cx, 0, "colorSpace")?;
+    let kind = string_arg(&mut cx, 1, "colorType")?;
+    let inherited = to_color_space(&space).and_then(|working| {
+        to_color_type(&kind).map(|color_type| {
+            inherited_color_space(&working, color_type, "raw")
+        })
+    });
+    match inherited.map(|space| from_color_space(&space)) {
+        Ok(Some(name)) => Ok(cx.string(name)),
+        Ok(None) => cx.throw_error(format!(
+            "colorSpace \"{space}\" has no canonical name"
+        )),
+        Err(msg) => cx.throw_type_error(msg),
+    }
+}
+
 /// `colorSpaceName(name)`: the canonical name for a colour space name or
 /// alias. Throws a `TypeError` for an unknown name.
 pub fn color_space_name(mut cx: FunctionContext) -> JsResult<JsString> {
