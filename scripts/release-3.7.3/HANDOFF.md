@@ -1,5 +1,7 @@
 # Handoff: phyron-skia-canvas 3.7.3 (2026-11-04)
 
+**Status 2026-11-04: 3.7.3 is published on npm** (`main` at `edc6ed2`, PR #53). Skia m157 waits for 3.8.0.
+
 Moving to another machine. Nothing below the "Pending" line has been compiled.
 
 ## Where things are
@@ -81,8 +83,8 @@ About 3x faster than the Xeon; do not mix the two tables. `studioLoop*.mjs <lib>
 2. ~~**Release build** and benchmarks~~ Done, see "Benchmarks on the new machine". `CHANGELOG.md` numbers filled in. Open for Moritz: the byte-identical question under Decisions, and the cache default.
 3. ~~**AVX2 vs AVX-512**~~ Dropped (Moritz): the difference between instruction sets does not matter.
 4. **Skia rebase on `skia-m157`** (already on top of `wip/3.7.3-skia-init`; rebase again if that branch moves): compile and port. Breaking changes per rust-skia notes: Vulkan context builder (0.99; `src/gpu/vulkan/{engine,renderer}.rs` use `vk::BackendContext::new` + `direct_contexts::make_vulkan`), Ganesh/Graphite feature split (0.153, done in `Cargo.toml`), third-party libs incl. freetype/harfbuzz updated (0.156; text pixels will likely move), FFI aliasing fixes (0.157: PDF `Document` borrows its writer -- `pdf::new_document` in `src/context/page.rs`; `TypefaceFontProvider`, `RefHandle::native_mut()` gone). **Regenerate `containers/use-static-fontconfig.patch`** against the rust-skia 0.157.0 tag or the Linux node prebuild breaks with a misleading error (`.github/workflows/build.yml` applies it with `-p1` to the vendored rust-skia checkout; verify `patch -p1 --dry-run` exits 0 with no fuzz). Then `deltas.js` vs 3.7.2 and the full suite; report to Moritz.
-5. Merge to `main`, CI green on all platforms (the new `src/node/memory.rs` has a Windows-only branch that has never been compiled), then ask Moritz for the tag. Release flow: `just release patch` (interactive), prebuilds via the draft release, un-draft, `npm run snapshot`, publish. At least linux-x64-gnu must be built.
-6. Tell studio-7b the final rev; it runs the five Cars golden cases (pixel verdict and timing) before publish. Known Studio impacts: `"high"` smoothing on every non-aligned draw (downscales change), `drawParagraph` now honours `globalAlpha`/blend (faded text may double-apply opacity), `graphics::init()` (pixels within about 1 code).
+5. Done (PR #53, release `v3.7.3`, all prebuilds, npm 3.7.3): merge to `main`, CI green on all platforms (the new `src/node/memory.rs` has a Windows-only branch that has never been compiled), then ask Moritz for the tag. Release flow: `just release patch` (interactive), prebuilds via the draft release, un-draft, `npm run snapshot`, publish. At least linux-x64-gnu must be built.
+6. Studio's golden suite runs when 3.7.3 reaches Studio staging, not before publish. Tell studio-7b the final rev; it runs the five Cars golden cases (pixel verdict and timing) before publish. Known Studio impacts: `"high"` smoothing on every non-aligned draw (downscales change), `drawParagraph` now honours `globalAlpha`/blend (faded text may double-apply opacity), `graphics::init()` (pixels within about 1 code).
 
 ## Gotchas
 
@@ -92,19 +94,6 @@ About 3x faster than the Xeon; do not mix the two tables. `studioLoop*.mjs <lib>
 - `new Canvas(w, h, { gpu: false })` only works from `dbbd35a8` on; for 3.7.2 comparisons set `canvas.gpu = false`.
 - Studio sessions on the old machine: studio-7b (dep, golden suite), studio-9b (production OOM). They will not be reachable from the new machine.
 
-## Standing rules from the old machine's agent memory
+## Standing rules
 
-That memory stayed on the old machine; these are the parts that apply anywhere.
-
-- **Prose (commits, PRs, comments, docs):** no spaces around `/`; `--` instead of em/en dashes; ASCII only. Never add a Claude/Anthropic co-author trailer or a "Generated with Claude Code" footer -- Moritz authors the commits.
-- **No PRs on weekends:** commit and push branches, but do not open, merge or push PRs on Saturday/Sunday unless Moritz asks.
-- **Rust API naming:** accessors have no `get_` prefix (`rects_for_range()`, not `get_rects_for_range()`); boolean properties read `is_*`/`has_*`. Applies to the crate-root Rust API; the Neon binding functions in `src/node/` keep their JS-shaped names.
-- **Build locally** before pushing; CI is for the OS matrix, not the only compiler.
-- **One `target/` directory:** a cold Skia build is 10-25 min and about 50 GB. Switch branches in place (`git switch`) instead of `git worktree add`; if a second worktree is unavoidable, point `CARGO_TARGET_DIR` at the main checkout's `target/`. Never run two cargo builds on it at once.
-- **`Cargo.lock` is not tracked** (library crate). Leave it on disk, never re-add it.
-- **`.gitignore` is a denylist:** `/*.*` ignores every root file with an extension except an allowlist. A new root config file (`clippy.toml`, `rust-toolchain.toml`, ...) is silently dropped unless you add `!/<file>`.
-- **rustfmt is pinned to `nightly-2026-05-25`** in CI (`rustfmt.toml` uses nightly-only options). Format with `cargo +nightly-2026-05-25 fmt`; a newer nightly can drift. The old machine formatted with a newer nightly and CI still passed on `dbbd35a8`, but check. A newer clippy also flagged four lints CI's does not (fixed on `main`).
-- **CI clippy matrix** covers only features that gate Rust code: features off, `vulkan,window,node-addon` (Ubuntu), `metal,window,node-addon` (macOS). `freetype` gates no Rust.
-- **Skia bump checklist:** regenerate `containers/use-static-fontconfig.patch` against the new rust-skia tag (see Pending step 4).
-- **npm release flow:** prebuilds upload to a draft GitHub release `v<version>`; un-draft it (`gh release edit v<version> --draft=false`) before `npm publish` so the download URLs resolve, then `npm run snapshot` writes the asset sha256 digests into `package.json`. The npm package and the `skia-canvas` crate version independently (`rust-v<X.Y.Z>` tags for the crate).
-- **Search and rewrite tools (blueprints `9c33b02`, `.blueprints/base/AGENTS.md`):** `ast-grep` for searching and rewriting source code, `rg` for other text, `fd` for files. `grep`, `find` and `ls -R` are forbidden, piped output included. Mechanical code edits are `ast-grep` rewrites (preview without `-U` first, then `cargo fmt`), never `sed`, `perl -pi` or a regex script. The old machine's agent worked before this bump and used `grep`/`sed`/Python edits; do not copy that.
+Moved to `AGENTS.md` (Workflow Rules), so they apply on every machine.

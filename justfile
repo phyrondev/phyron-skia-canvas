@@ -122,7 +122,7 @@ release bump="patch":
     VERSION=$(node -p "require('./package.json').version")
     TAG="v${VERSION}"
 
-    if gh release view "${TAG}" --json id &>/dev/null; then
+    if gh release view "${TAG}" -R phyrondev/phyron-skia-canvas --json id &>/dev/null; then
         echo "Error: release ${TAG} already exists"
         git checkout -- package.json package-lock.json
         exit 1
@@ -146,13 +146,19 @@ release bump="patch":
     git commit -m "${VERSION}"
     git tag -a "${TAG}" -m "${TAG}"
     git push origin main --tags
-    gh release create "${TAG}" ${PRERELEASE} --draft --generate-notes
+    gh release create "${TAG}" -R phyrondev/phyron-skia-canvas ${PRERELEASE} --draft --generate-notes
+    gh workflow run build.yml -R phyrondev/phyron-skia-canvas --ref "${TAG}" -f platforms=all
 
     echo ""
-    echo "Draft release ${TAG} created. CI will build binaries."
-    echo "When done, run: just publish"
+    echo "Draft release ${TAG} created; build.yml is compiling the prebuilds."
+    echo "When every build.yml job has passed, run: just publish"
 
-# Undraft release and trigger npm publish.
+# Record the prebuild hashes, undraft the release and publish to npm.
+#
+# Run it after every `build.yml` job has passed: the snapshot hashes only the
+# assets on the release at that moment, and installs on a platform without a
+# prebuild fail with a 404. `npm publish` runs here, not in CI: npm asks for
+# the passkey in the browser (`publish.yml` and its `NPM_TOKEN` do not work).
 #
 # All `gh` calls pass `-R phyrondev/phyron-skia-canvas` explicitly so the
 # recipe works regardless of which remote (`origin` / `fork` / `upstream`)
@@ -174,6 +180,14 @@ publish:
         exit 1
     fi
 
+    # sha256 of every prebuild into package.json; installs verify downloads
+    node lib/prebuild.mjs snapshot
+    if ! git diff --quiet package.json; then
+        git add package.json
+        git commit -m "node: snapshot ${TAG} prebuild hashes"
+        git push origin main
+    fi
+
     DRAFT=$(gh api "repos/${REPO}/releases/${RELEASE_ID}" --jq '.draft')
     if [[ "$DRAFT" == "false" ]]; then
         echo "Release ${TAG} is already published."
@@ -182,5 +196,4 @@ publish:
         echo "Release ${TAG} published on GitHub."
     fi
 
-    gh workflow run publish.yml -R "${REPO}"
-    echo "NPM publish workflow triggered."
+    npm publish --access public
